@@ -10,6 +10,7 @@ import {
   mergeSessions,
   newId,
   slugify,
+  type AccessLevel,
   type CaptureSession,
   type Entry,
   type EntryElement,
@@ -24,6 +25,8 @@ import { HttpStatusError, NetworkError, SyncQueue, type FlushResult } from './sy
 const LS_KEY = 'vw.key';
 const LS_ME = 'vw.me';
 const LS_AUTHORS = 'vw.lastAuthors';
+const LS_ACCESS = 'vw.access';
+export const LS_HOSTED = 'vw.hosted';
 
 export type EntryStatus = 'local' | 'sent' | 'error';
 
@@ -52,14 +55,34 @@ export function lsSet(k: string, v: string | null): void {
   }
 }
 
-/** Toma la clave del enlace del QR (`?k=`), la guarda y la quita de la barra de direcciones. */
+/**
+ * Toma la clave del enlace, la guarda en el teléfono y la quita de la barra de
+ * direcciones (para que no quede en capturas de pantalla ni en el historial).
+ *
+ * Formas aceptadas: `/?k=CLAVE` (servidor local), `/#k=CLAVE` (versión
+ * hospedada: lo que va después de `#` no llega al servidor ni a sus registros)
+ * y `/#/ruta?k=CLAVE` (por ejemplo `#/escritorio?k=CLAVE`).
+ */
 export function takeKeyFromUrl(): string | null {
   const url = new URL(location.href);
-  const k = url.searchParams.get('k');
+  let k = url.searchParams.get('k');
+  url.searchParams.delete('k');
+  const hash = url.hash.slice(1);
+  const q = hash.startsWith('k=') ? 0 : hash.indexOf('?') + 1;
+  if (q > 0 || hash.startsWith('k=')) {
+    const route = q > 0 ? hash.slice(0, q - 1) : '';
+    const params = new URLSearchParams(hash.slice(q));
+    const fromHash = params.get('k');
+    if (fromHash) {
+      k = fromHash;
+      params.delete('k');
+      const rest = params.toString();
+      url.hash = route + (rest ? `?${rest}` : '');
+    }
+  }
   if (k) {
     lsSet(LS_KEY, k);
-    url.searchParams.delete('k');
-    history.replaceState(null, '', url.pathname + url.search + url.hash);
+    history.replaceState(null, '', url.pathname + url.search + (url.hash.length > 1 ? url.hash : ''));
   }
   return lsGet(LS_KEY);
 }
@@ -74,6 +97,10 @@ export class App {
   readonly sessions = new Map<string, CaptureSession>();
   pendingKeys = new Map<string, string | undefined>();
   sync: SyncState = { online: undefined, pending: 0, unauthorized: false };
+  /** Qué permite la clave de este teléfono (el servidor local no lo dice: permite todo). */
+  access: AccessLevel = (lsGet(LS_ACCESS) as AccessLevel | null) ?? 'edit';
+  /** Versión hospedada (Worker con HTTPS) o servidor local. */
+  hosted = lsGet(LS_HOSTED) === '1';
   /** Vista de computadora: trae todas las sesiones, no solo la de hoy. */
   wide = false;
   private readonly listeners = new Set<() => void>();
@@ -133,7 +160,9 @@ export class App {
   /** Revisa conexión (trayendo lo nuevo del servidor) y manda lo pendiente. */
   async tick(force: boolean): Promise<void> {
     this.tickCount++;
-    if (force || this.tickCount % 2 === 0 || this.sync.online !== true) {
+    // La vista de computadora trae todas las sesiones: se pide con menos
+    // frecuencia (cada ~16 s en vez de ~8 s) para no gastar lecturas de la base.
+    if (force || this.tickCount % (this.wide ? 4 : 2) === 0 || this.sync.online !== true) {
       const wasOnline = this.sync.online;
       await this.pull();
       if (this.sync.online && wasOnline !== true) await this.queue.retryNow();
@@ -168,6 +197,10 @@ export class App {
       this.sync.online = true;
       this.sync.unauthorized = false;
       this.sync.lastContact = Date.now();
+      this.access = s.access ?? 'edit';
+      this.hosted = s.hosted === true;
+      lsSet(LS_ACCESS, this.access);
+      lsSet(LS_HOSTED, this.hosted ? '1' : null);
       await this.applyServerState(s.team, s.sessions, s.entries);
     } catch (e) {
       if (e instanceof NetworkError) this.sync.online = false;

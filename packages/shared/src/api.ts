@@ -30,12 +30,23 @@
  * | POST /api/sessions/:date/attendance    | Attendance        | { session }         |
  * | PUT  /api/sessions/:date/closing       | SessionClosing    | { session, applied }|
  * | GET  /api/template                     | —                 | plantilla .pptx     |
+ * | GET  /api/qr                           | —                 | QrResponse          |
+ *
+ * `/api/qr` solo existe en la versión hospedada (Worker); el servidor local
+ * tiene su propia página `/qr`.
+ *
+ * Claves en la versión hospedada: la de captura permite capturar, ver y editar
+ * entradas; la de edición, además, editar el equipo, descargar la plantilla
+ * (generar la bitácora) y ver el QR. El servidor local tiene una sola clave
+ * que permite todo.
  */
 
 import {
   ENTRY_KINDS,
   ENTRY_MARKS,
   TEAM_FORMAT,
+  initialsOf,
+  slugify,
   type Attendance,
   type CaptureSession,
   type Entry,
@@ -50,6 +61,11 @@ export const TEAM_KEY_HEADER = 'x-team-key';
 export const TEAM_KEY_QUERY = 'k';
 /** Tamaño máximo de una foto ya reducida (las del teléfono pesan ~0.3-0.8 MB). */
 export const MAX_PHOTO_BYTES = 15 * 1024 * 1024;
+/** Tamaño máximo de un cuerpo JSON (una entrada, el equipo, una asistencia o un cierre). */
+export const MAX_JSON_BYTES = 1024 * 1024;
+
+/** Qué permite la clave con la que se hizo la petición. */
+export type AccessLevel = 'capture' | 'edit';
 
 export interface StateResponse {
   version: typeof API_VERSION;
@@ -57,6 +73,17 @@ export interface StateResponse {
   sessions: CaptureSession[];
   entries: Entry[];
   serverTime: string;
+  /** Qué permite la clave usada. Si falta (servidor local), permite todo. */
+  access?: AccessLevel;
+  /** `true` en la versión hospedada (HTTPS): la app instala su service worker. */
+  hosted?: boolean;
+}
+
+export interface QrResponse {
+  /** Enlace de captura (lleva la clave de captura). */
+  captureUrl: string;
+  /** El QR de ese enlace, como SVG. */
+  svg: string;
 }
 
 export interface AddMemberRequest {
@@ -90,6 +117,7 @@ export const apiPath = {
   attendance: (date: string) => `/api/sessions/${date}/attendance`,
   closing: (date: string) => `/api/sessions/${date}/closing`,
   template: () => '/api/template',
+  qr: () => '/api/qr',
 };
 
 // --- Mezcla -------------------------------------------------------------------
@@ -127,12 +155,39 @@ export function mergeSessions(a: CaptureSession, b: CaptureSession): CaptureSess
   return out;
 }
 
+/**
+ * Alta de un integrante desde la app ("¿No estás en la lista?"). Si el id ya
+ * existe no cambia nada (es idempotente). Devuelve un mensaje de error o el
+ * equipo resultante.
+ */
+export function addMemberToTeam(team: TeamConfig, body: unknown): { team: TeamConfig; changed: boolean } | { error: string } {
+  const b = isObj(body) ? body : {};
+  const name = isStr(b.name) ? b.name.trim() : '';
+  if (!name) return { error: 'falta el nombre' };
+  if (name.length > MAX_NAME_LENGTH) return { error: 'el nombre es demasiado largo' };
+  const id = isStr(b.id) && ID_PATTERN.test(b.id) ? b.id : slugify(name).slice(0, 64);
+  if (team.members.some((m) => m.id === id)) return { team, changed: false };
+  return { team: { ...team, members: [...team.members, { id, name, initials: initialsOf(name), roles: [] }] }, changed: true };
+}
+
+/** Las fotos se guardan ya reducidas en el teléfono y siempre son JPEG. */
+export function isJpegBytes(bytes: Uint8Array): boolean {
+  return bytes.length >= 4 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
+}
+
 // --- Validación de lo que llega al servidor -----------------------------------------
 
 export const ID_PATTERN = /^[A-Za-z0-9_-]{1,64}$/;
+export const MAX_NAME_LENGTH = 120;
 
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
 const isStr = (v: unknown): v is string => typeof v === 'string';
+
+/** Fecha y hora ISO en UTC, como las de `Date.toISOString()` (se comparan como texto). */
+const ISO_UTC = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,3})?Z$/;
+export function isIsoDateTime(v: unknown): v is string {
+  return isStr(v) && ISO_UTC.test(v) && !Number.isNaN(Date.parse(v));
+}
 const optStr = (v: unknown) => v === undefined || isStr(v);
 const isStrArr = (v: unknown): v is string[] => Array.isArray(v) && v.every(isStr);
 
@@ -141,7 +196,7 @@ export function checkEntry(v: unknown): string | undefined {
   if (!isObj(v)) return 'la entrada debe ser un objeto';
   if (!isStr(v.id) || !ID_PATTERN.test(v.id)) return 'id de entrada inválido';
   if (!isValidDate(v.sessionDate)) return 'sessionDate inválida';
-  if (!isStr(v.createdAt) || !isStr(v.updatedAt)) return 'faltan createdAt o updatedAt';
+  if (!isIsoDateTime(v.createdAt) || !isIsoDateTime(v.updatedAt)) return 'createdAt y updatedAt deben ser fechas ISO en UTC';
   if (!isStrArr(v.authorIds)) return 'authorIds debe ser una lista de ids';
   if (!optStr(v.capturedBy) || !optStr(v.robotId) || !optStr(v.subsystem) || !optStr(v.thread)) return 'campos de texto inválidos';
   if (v.section !== undefined && !(SECTIONS as readonly unknown[]).includes(v.section)) return 'sección inválida';
@@ -179,12 +234,12 @@ function checkElement(el: unknown): string | undefined {
 }
 
 export function checkAttendance(v: unknown): string | undefined {
-  if (!isObj(v) || !isStr(v.memberId) || !ID_PATTERN.test(v.memberId) || !isStr(v.checkIn)) return 'asistencia inválida';
+  if (!isObj(v) || !isStr(v.memberId) || !ID_PATTERN.test(v.memberId) || !isIsoDateTime(v.checkIn)) return 'asistencia inválida';
   return undefined;
 }
 
 export function checkClosing(v: unknown): string | undefined {
-  if (!isObj(v) || !isStr(v.updatedAt)) return 'cierre inválido';
+  if (!isObj(v) || !isIsoDateTime(v.updatedAt)) return 'cierre inválido';
   if (!optStr(v.whatWeDid) || !optStr(v.whatFailed) || !optStr(v.whatsNext) || !optStr(v.by)) return 'cierre inválido';
   return undefined;
 }
@@ -195,7 +250,7 @@ export function checkTeam(v: unknown): string | undefined {
   if (!Array.isArray(v.members)) return 'falta la lista de integrantes';
   const ids = new Set<string>();
   for (const m of v.members) {
-    if (!isObj(m) || !isStr(m.id) || !ID_PATTERN.test(m.id) || !isStr(m.name) || m.name.trim() === '') return 'integrante inválido';
+    if (!isObj(m) || !isStr(m.id) || !ID_PATTERN.test(m.id) || !isStr(m.name) || m.name.trim() === '' || m.name.length > MAX_NAME_LENGTH) return 'integrante inválido';
     if (ids.has(m.id)) return `id de integrante repetido: ${m.id}`;
     ids.add(m.id);
   }

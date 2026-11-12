@@ -1,5 +1,6 @@
 import { isUnclassified, newId, type EntryElement } from '@vortex-wake/shared';
 import type { App } from '../app.ts';
+import { BUILD_LABEL } from '../pwa.ts';
 import { dateLabel, h, icon, setChildren, toast } from '../ui.ts';
 import { entryCard, photoButton, syncBadge } from './common.ts';
 
@@ -68,7 +69,8 @@ export function renderHome(root: HTMLElement, app: App, go: (hash: string) => vo
     'footer',
     { class: 'home-footer' },
     h('button', { class: 'btn secondary', type: 'button', onclick: () => go('#/cierre') }, 'Cerrar la sesión del día'),
-    h('a', { class: 'link-muted', href: '#/escritorio' }, 'Vista de computadora'),
+    app.access === 'edit' ? h('a', { class: 'link-muted', href: '#/escritorio' }, 'Vista de computadora') : null,
+    h('span', { class: 'muted small', 'data-testid': 'build', text: `Versión ${BUILD_LABEL}` }),
   );
 
   root.replaceChildren(header, actions, filters, list, footer);
@@ -135,7 +137,7 @@ export function renderWho(root: HTMLElement, app: App, go: (hash: string) => voi
               ),
             ),
           )
-        : h('p', { class: 'muted', text: app.sync.online === false ? 'No se pudo conectar con la laptop del taller. Revisa que estés en la misma red wifi.' : 'Cargando el equipo…' }),
+        : h('p', { class: 'muted', text: app.sync.online === false ? (app.hosted ? 'No hay conexión. Revisa la señal o el wifi del teléfono.' : 'No se pudo conectar con la laptop del taller. Revisa que estés en la misma red wifi.') : 'Cargando el equipo…' }),
       app.team
         ? h(
             'form',

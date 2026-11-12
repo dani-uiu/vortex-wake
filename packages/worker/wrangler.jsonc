@@ -1,0 +1,50 @@
+// Configuración del Worker de Vortex Wake (ver README.md de esta carpeta).
+//
+// No lleva ids de cuenta: la base D1 y el bucket R2 se buscan por nombre en la
+// cuenta con la que se inició sesión en wrangler. Así el repositorio (público)
+// no queda atado a la cuenta de nadie. Si wrangler escribe un "database_id" en
+// este archivo al publicar, se puede descartar ese cambio: no hace falta.
+//
+// Las claves NO van aquí: son secretos (`npx wrangler secret put CAPTURE_KEY`
+// y `EDIT_KEY`) y, para el simulador local, el archivo .dev.vars (ignorado
+// por git).
+{
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+  "name": "vortex-wake",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-11-01",
+
+  // La dirección pública es https://vortex-wake.<tu-subdominio>.workers.dev
+  "workers_dev": true,
+  // Sin direcciones extra por versión (también pedirían clave, pero son más lugares por cuidar).
+  "preview_urls": false,
+
+  // La app compilada (packages/app/dist) más la plantilla, que arma
+  // scripts/build.ts. Todo pasa primero por el Worker para agregar las
+  // cabeceras de seguridad y no servir private/ sin clave.
+  "assets": {
+    "directory": "./dist/public",
+    "binding": "ASSETS",
+    "run_worker_first": true,
+    "not_found_handling": "none"
+  },
+
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "vortex-wake",
+      "migrations_dir": "migrations"
+    }
+  ],
+
+  "r2_buckets": [
+    {
+      "binding": "PHOTOS",
+      "bucket_name": "vortex-wake-fotos"
+    }
+  ],
+
+  // Sin registros guardados en Cloudflare (las peticiones de fotos llevan la
+  // clave en la dirección). Para ver errores en vivo: npx wrangler tail
+  "observability": { "enabled": false }
+}

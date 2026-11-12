@@ -39,13 +39,25 @@ En la red local por `http://` no hay contexto seguro, así que:
 - No se usa `getUserMedia`: la cámara es `<input type="file" accept="image/*" capture="environment">`.
 - No se usan `crypto.randomUUID` ni `navigator.storage.persist()`. El navegador podría borrar el almacenamiento si el teléfono se queda sin espacio (normalmente no pasa con lo de un día).
 
-Para cuando haya HTTPS: registrar un service worker en `src/main.ts` que guarde en caché `index.html` y `assets/` (los nombres ya llevan hash) y agregar un `manifest.webmanifest`. El almacenamiento, la cola y el contrato no cambian.
+## Versión hospedada (HTTPS, `packages/worker`)
+
+La misma compilación sirve para los dos servidores. El Worker responde `hosted: true` y `access` (`capture` o `edit`) en `/api/state`; la app los recuerda en el teléfono.
+
+- **Service worker** (`service-worker.js`, que `vite.config.ts` convierte en `dist/sw.js` con la lista de archivos y una huella de su contenido). Solo se registra si el servidor dijo `hosted: true`; con el servidor local no se registra (y si había uno, se quita). Guarda la app de esa versión; al abrir pide primero a la red (si no hay, o tarda más de 4 s, usa lo guardado), así que **se puede abrir y recargar sin conexión**. Nunca guarda `/api` (entradas, fotos, plantilla).
+- **Actualizaciones:** cada versión publicada cambia `sw.js`. El nuevo toma el control en cuanto se instala y borra la caché vieja; si la app estaba abierta aparece "Hay una versión nueva de la app" (botón Actualizar) y se recarga sola al volver a la pestaña. La versión (`VW_BUILD_LABEL` o la fecha de compilación) se ve al pie.
+- **Instalable:** `public/manifest.webmanifest` e íconos en `public/icons/` (los dibuja `scripts/make-icons.ts` con Edge).
+- **Clave:** el QR trae `/#k=CLAVE` (lo que va tras `#` no llega al servidor); también se acepta `/#/escritorio?k=CLAVE` y `/?k=CLAVE`. Se guarda y se quita de la barra de direcciones.
+- **Permisos:** con la clave de captura no aparece "Vista de computadora", y `#/escritorio` y `#/qr` dicen que hace falta la clave de edición.
+- **Página del QR** (`#/qr`, clave de edición): el enlace de captura y su QR, para imprimir.
+
+El almacenamiento, la cola y el contrato son los mismos con los dos servidores.
 
 ## Pruebas
 
 - `test/sync-queue.test.ts`: la cola (sin conexión, una sola versión por entrada, edición mientras se manda, fotos en proceso, errores y 401, versión más nueva del servidor, cierre).
 - `test/image.test.ts`: hora de captura desde el EXIF.
-- `e2e/e2e.ts` (`npm run e2e`): punta a punta en Edge, con dos teléfonos de 360 px y la computadora. Guarda capturas y el `.pptx` en `%TEMP%\vortex-wake-app\e2e`.
+- `e2e/e2e.ts` (`npm run e2e`): punta a punta en Edge, con dos teléfonos de 360 px y la computadora, contra el servidor local. Guarda capturas y el `.pptx` en `%TEMP%\vortex-wake-app\e2e`.
+- `npm run e2e:nube`: la misma prueba contra el Worker en el entorno local de Workers, más permisos de cada clave, página del QR, abrir sin conexión con el service worker y que una versión nueva llegue. Capturas en `%TEMP%\vortex-wake-worker\e2e`.
 
 ## Dependencias
 

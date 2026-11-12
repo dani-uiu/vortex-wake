@@ -287,3 +287,18 @@ input:focus, textarea:focus, select:focus { border-color: var(--accent); outline
   .desk-top { padding: 12px 16px; }
   .desk-main { padding: 12px 16px; }
 }
+
+/* --- Versión hospedada: aviso de actualización y página del QR --- */
+.boot-msg { padding: 24px; font-family: system-ui, sans-serif; }
+.update-banner {
+  position: fixed; left: 12px; right: 12px; bottom: calc(12px + env(safe-area-inset-bottom)); z-index: 50;
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 10px 12px; border-radius: var(--radius); background: var(--surface); color: var(--fg);
+  border: 1px solid var(--line); box-shadow: 0 6px 24px rgba(0, 0, 0, .18);
+}
+.qr-page { max-width: 640px; margin: 0 auto; padding: 24px 16px; text-align: center; display: flex; flex-direction: column; align-items: center; gap: 12px; }
+.qr-box { display: flex; flex-direction: column; align-items: center; gap: 12px; width: 100%; }
+.qr-code { background: #fff; padding: 16px; border-radius: 12px; width: min(80vmin, 480px); }
+.qr-code img { width: 100%; height: auto; display: block; }
+.qr-link { font-size: 14px; word-break: break-all; max-width: 100%; }
+@media print { .no-print, .update-banner, #toast { display: none !important; } }

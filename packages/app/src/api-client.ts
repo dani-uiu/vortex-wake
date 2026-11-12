@@ -7,6 +7,7 @@ import {
   type Attendance,
   type Entry,
   type PutEntryResponse,
+  type QrResponse,
   type SessionClosing,
   type StateResponse,
   type TeamConfig,
@@ -90,6 +91,10 @@ export class ApiClient implements Transport {
   async template(): Promise<Uint8Array> {
     const res = await this.req(apiPath.template(), {}, 60_000);
     return new Uint8Array(await res.arrayBuffer());
+  }
+  /** Solo en la versión hospedada y con la clave de edición. */
+  qr(): Promise<QrResponse> {
+    return this.json<QrResponse>(apiPath.qr(), 'GET');
   }
   async photo(id: string): Promise<Uint8Array> {
     const res = await this.req(apiPath.photo(id), {}, PHOTO_TIMEOUT_MS);

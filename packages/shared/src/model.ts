@@ -185,7 +185,7 @@ const ID_ALPHABET = '0123456789abcdefghijklmnopqrstuvwxyz';
  */
 export function newId(): string {
   const bytes = new Uint8Array(20);
-  globalThis.crypto.getRandomValues(bytes);
+  crypto.getRandomValues(bytes);
   let out = '';
   for (const b of bytes) out += ID_ALPHABET[b % 36];
   return out;

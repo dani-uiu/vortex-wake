@@ -14,7 +14,7 @@ export function syncBadge(app: App): HTMLElement {
     ic = 'alert';
   } else if (s.online === false) {
     cls = 'warn';
-    text = s.pending > 0 ? `Sin conexión · ${s.pending} guardado(s) en este teléfono` : 'Sin conexión con la laptop';
+    text = s.pending > 0 ? `Sin conexión · ${s.pending} guardado(s) en este teléfono` : app.hosted ? 'Sin conexión' : 'Sin conexión con la laptop';
     ic = 'phone';
   } else if (s.lastError) {
     cls = 'bad';

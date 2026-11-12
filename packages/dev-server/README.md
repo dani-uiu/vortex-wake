@@ -1,6 +1,6 @@
 # @vortex-wake/dev-server
 
-Servidor local para el taller: sirve la app (ya compilada) en la red local y guarda lo capturado en `data/` como archivos legibles. Implementa el contrato HTTP de `packages/shared/src/api.ts`; más adelante un Worker de Cloudflare implementará el mismo contrato.
+Servidor local para el taller: sirve la app (ya compilada) en la red local y guarda lo capturado en `data/` como archivos legibles. Implementa el contrato HTTP de `packages/shared/src/api.ts`; el Worker de Cloudflare (`packages/worker`) implementa el mismo contrato en la nube. Para pasar lo de `data/` a la nube: `npm run nube:subir-datos` (ver `packages/worker/README.md`).
 
 ## Uso
 

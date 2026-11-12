@@ -1,19 +1,22 @@
 /**
- * Arranque y rutas (#/, #/quien, #/entrada/<id>, #/cierre, #/escritorio).
+ * Arranque y rutas (#/, #/quien, #/entrada/<id>, #/cierre, #/escritorio, #/qr).
  *
  * Por HTTP en la red local no hay contexto seguro: no se usan service worker,
  * instalación como PWA ni getUserMedia. La cámara es un <input capture> y todo
- * se guarda en IndexedDB. Cuando haya HTTPS se puede registrar un service
- * worker aquí (ver README) sin cambiar lo demás.
+ * se guarda en IndexedDB. En la versión hospedada (HTTPS) se registra además
+ * un service worker para abrir la app sin conexión (src/pwa.ts).
  */
 
 import './styles.css';
-import { App, takeKeyFromUrl } from './app.ts';
+import { App, LS_HOSTED, lsGet, takeKeyFromUrl } from './app.ts';
 import { LocalDb } from './db.ts';
+import { setupServiceWorker } from './pwa.ts';
 import { h } from './ui.ts';
-import { renderDesktop } from './views/desktop.ts';
+import { renderDesktop, renderNeedsEditKey, renderQr } from './views/desktop.ts';
 import { renderEditor } from './views/editor.ts';
 import { renderClosing, renderHome, renderNoKey, renderWho } from './views/home.ts';
+
+setupServiceWorker(lsGet(LS_HOSTED) === '1');
 
 const root = document.getElementById('app') as HTMLElement;
 
@@ -29,6 +32,10 @@ async function boot(): Promise<void> {
   }
   const app = new App(db, key);
   (window as unknown as { vwApp: App }).vwApp = app;
+  let hosted = app.hosted;
+  app.subscribe(() => {
+    if (app.hosted !== hosted) setupServiceWorker((hosted = app.hosted));
+  });
   await app.init();
 
   let cleanup: (() => void) | undefined;
@@ -41,9 +48,18 @@ async function boot(): Promise<void> {
     cleanup = undefined;
     window.scrollTo(0, 0);
     const hash = location.hash || '#/';
-    document.body.classList.toggle('wide', hash.startsWith('#/escritorio'));
+    const desk = hash.startsWith('#/escritorio') || hash.startsWith('#/qr');
+    document.body.classList.toggle('wide', desk);
+    if (desk && app.access !== 'edit') {
+      renderNeedsEditKey(root);
+      return;
+    }
     if (hash.startsWith('#/escritorio')) {
       cleanup = renderDesktop(root, app, go);
+      return;
+    }
+    if (hash.startsWith('#/qr')) {
+      cleanup = renderQr(root, app);
       return;
     }
     if (!app.me && hash !== '#/quien') return go('#/quien');
@@ -55,6 +71,14 @@ async function boot(): Promise<void> {
   };
   addEventListener('hashchange', route);
   route();
+  // Si la clave cambia de permiso (por ejemplo, se abrió con la de captura) y se
+  // está en la vista de computadora, se vuelve a decidir qué mostrar.
+  let access = app.access;
+  app.subscribe(() => {
+    if (app.access === access) return;
+    access = app.access;
+    if (/^#\/(escritorio|qr)/.test(location.hash)) route();
+  });
 }
 
 void boot();

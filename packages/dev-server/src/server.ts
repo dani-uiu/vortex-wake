@@ -12,16 +12,17 @@ import qrcode from 'qrcode-generator';
 import {
   API_VERSION,
   ID_PATTERN,
+  MAX_JSON_BYTES,
   MAX_PHOTO_BYTES,
   TEAM_KEY_HEADER,
   TEAM_KEY_QUERY,
+  addMemberToTeam,
   checkAttendance,
   checkClosing,
   checkEntry,
   checkTeam,
-  initialsOf,
+  isJpegBytes,
   isValidDate,
-  slugify,
   type AddMemberRequest,
   type Attendance,
   type Entry,
@@ -50,8 +51,6 @@ export interface RunningServer {
   teamKey: string;
   close(): Promise<void>;
 }
-
-const MAX_JSON_BYTES = 2 * 1024 * 1024;
 
 const MIME: Record<string, string> = {
   '.html': 'text/html; charset=utf-8',
@@ -116,14 +115,9 @@ export function startServer(opts: ServerOptions): Promise<RunningServer> {
       return sendJson(res, 200, { team: store.team });
     }
     if (method === 'POST' && p === '/api/team/members') {
-      const body = (await readJson(req)) as AddMemberRequest;
-      const name = typeof body?.name === 'string' ? body.name.trim() : '';
-      if (!name) throw new HttpError(400, 'falta el nombre');
-      const id = typeof body.id === 'string' && ID_PATTERN.test(body.id) ? body.id : slugify(name);
-      const team = store.team;
-      if (!team.members.some((m) => m.id === id)) {
-        store.setTeam({ ...team, members: [...team.members, { id, name, initials: initialsOf(name), roles: [] }] });
-      }
+      const r = addMemberToTeam(store.team, (await readJson(req)) as AddMemberRequest);
+      if ('error' in r) throw new HttpError(400, r.error);
+      if (r.changed) store.setTeam(r.team);
       return sendJson(res, 200, { team: store.team });
     }
 
@@ -142,7 +136,7 @@ export function startServer(opts: ServerOptions): Promise<RunningServer> {
       if (!ID_PATTERN.test(id)) throw new HttpError(400, 'id de foto inválido');
       if (method === 'PUT') {
         const bytes = await readBody(req, MAX_PHOTO_BYTES);
-        if (bytes.length < 4 || bytes[0] !== 0xff || bytes[1] !== 0xd8) throw new HttpError(400, 'la foto debe ser JPEG');
+        if (!isJpegBytes(bytes)) throw new HttpError(400, 'la foto debe ser JPEG');
         const created = store.putPhoto(id, bytes);
         return sendJson(res, 200, { id, bytes: bytes.length, created });
       }

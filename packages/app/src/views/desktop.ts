@@ -64,7 +64,16 @@ export function renderDesktop(root: HTMLElement, app: App, go: (hash: string) =>
         { class: 'desk-top' },
         h('div', {}, h('div', { class: 'eyebrow', text: 'Vortex Wake' }), h('h1', { text: 'Bitácora del equipo' })),
         badge,
-        h('div', { class: 'row wrap' }, numbering, genBtn, h('button', { class: 'btn secondary', type: 'button', onclick: () => openTeam() }, 'Equipo'), h('a', { class: 'btn secondary', href: '#/' }, 'Vista de celular')),
+        h(
+          'div',
+          { class: 'row wrap' },
+          numbering,
+          genBtn,
+          h('button', { class: 'btn secondary', type: 'button', onclick: () => openTeam() }, 'Equipo'),
+          // En la versión hospedada el QR es parte de la app; con el servidor local, su página /qr (solo en la laptop).
+          h('a', { class: 'btn secondary', href: app.hosted ? '#/qr' : '/qr', 'data-testid': 'open-qr' }, 'QR del taller'),
+          h('a', { class: 'btn secondary', href: '#/' }, 'Vista de celular'),
+        ),
       ),
       report,
       h('div', { class: 'desk-body' }, side, main, panel),
@@ -129,6 +138,65 @@ export function renderDesktop(root: HTMLElement, app: App, go: (hash: string) =>
   };
 }
 
+/** La vista de computadora y el QR piden la clave de edición. */
+export function renderNeedsEditKey(root: HTMLElement): void {
+  root.replaceChildren(
+    h(
+      'div',
+      { class: 'center', 'data-testid': 'needs-edit-key' },
+      h('h1', { text: 'Vista de computadora' }),
+      h('p', { text: 'Esta parte necesita la clave de edición. La clave de este dispositivo es la del QR del taller, que sirve para capturar.' }),
+      h('p', { class: 'muted', text: 'Quienes arman la bitácora tienen su propio enlace con la clave de edición. Ábrelo en esta computadora.' }),
+      h('a', { class: 'btn secondary', href: '#/' }, 'Volver a la captura'),
+    ),
+  );
+}
+
+/** Página del QR (versión hospedada, clave de edición): el enlace de captura para imprimir o mostrar en pantalla. */
+export function renderQr(root: HTMLElement, app: App): () => void {
+  const box = h('div', { class: 'qr-box', 'data-testid': 'qr' }, h('p', { class: 'muted', text: 'Cargando el QR…' }));
+  root.replaceChildren(
+    h(
+      'div',
+      { class: 'qr-page' },
+      h('div', { class: 'no-print row wrap' }, h('a', { class: 'btn secondary', href: '#/escritorio' }, 'Volver a la vista de computadora'), h('button', { class: 'btn secondary', type: 'button', onclick: () => print() }, 'Imprimir')),
+      h('h1', { text: 'Escanea para capturar' }),
+      box,
+      h('p', { class: 'muted', text: 'Con este QR cualquiera del equipo puede capturar y ver las entradas desde su celular. No lo publiques en redes ni fuera del taller.' }),
+    ),
+  );
+  let alive = true;
+  const load = async () => {
+    try {
+      const r = await app.api.qr();
+      if (!alive) return;
+      const img = h('img', { src: `data:image/svg+xml;charset=utf-8,${encodeURIComponent(r.svg)}`, alt: 'Código QR del enlace de captura', 'data-testid': 'qr-image' });
+      const link = h('code', { class: 'qr-link', text: r.captureUrl });
+      box.replaceChildren(
+        h('div', { class: 'qr-code' }, img),
+        link,
+        h('button', { class: 'btn secondary no-print', type: 'button', onclick: () => void navigator.clipboard?.writeText(r.captureUrl).then(() => toast('Enlace copiado'), () => toast('No se pudo copiar')) }, 'Copiar enlace'),
+      );
+    } catch (e) {
+      if (!alive) return;
+      const status = (e as { status?: number }).status;
+      box.replaceChildren(
+        h('p', {
+          class: 'bad-text',
+          text:
+            status === 404
+              ? 'Con el servidor local, el QR está en http://localhost:4321/qr (ábrelo en la laptop del taller).'
+              : `No se pudo cargar el QR: ${(e as Error).message}`,
+        }),
+      );
+    }
+  };
+  void load();
+  return () => {
+    alive = false;
+  };
+}
+
 function renderTeamPanel(panel: HTMLElement, app: App, close: () => void): void {
   const team = app.team;
   if (!team) return;
@@ -148,7 +216,12 @@ function renderTeamPanel(panel: HTMLElement, app: App, close: () => void): void 
   renderRobots();
   panel.replaceChildren(
     h('div', { class: 'topbar-row' }, h('h2', { text: 'Equipo' }), h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'Cerrar', onclick: close }, icon('x'))),
-    h('p', { class: 'muted small', text: 'Se guarda en data/team.json de la laptop. También se puede editar ese archivo directamente.' }),
+    h('p', {
+      class: 'muted small',
+      text: app.hosted
+        ? 'Se guarda en la nube. Para subir el equipo de data/team.json, usa "npm run nube:subir-datos" en la laptop.'
+        : 'Se guarda en data/team.json de la laptop. También se puede editar ese archivo directamente.',
+    }),
     h('h3', { text: 'Integrantes' }),
     h('ul', { class: 'members' }, draft.members.map((m) => h('li', { text: m.name }))),
     h(

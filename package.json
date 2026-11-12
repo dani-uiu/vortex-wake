@@ -6,19 +6,27 @@
     "packages/shared",
     "packages/generator",
     "packages/app",
-    "packages/dev-server"
+    "packages/dev-server",
+    "packages/worker"
   ],
   "engines": {
     "node": ">=22.18"
   },
   "scripts": {
     "test": "vitest run",
-    "typecheck": "tsc -p packages/shared && tsc -p packages/generator && tsc -p packages/dev-server && tsc -p packages/app",
+    "typecheck": "tsc -p packages/shared && tsc -p packages/generator && tsc -p packages/dev-server && tsc -p packages/app && tsc -p packages/worker && tsc -p packages/worker/tsconfig.node.json",
     "generate": "node packages/generator/src/cli.ts",
     "build": "npm run build -w @vortex-wake/app",
     "servidor": "node packages/dev-server/src/main.ts",
     "taller": "npm run build && node packages/dev-server/src/main.ts --open",
-    "e2e": "npm run build && node packages/app/e2e/e2e.ts"
+    "e2e": "npm run build && node packages/app/e2e/e2e.ts",
+    "e2e:nube": "npm run nube:compilar && node packages/app/e2e/e2e.ts --nube",
+    "nube:compilar": "npm run build && node packages/worker/scripts/build.ts",
+    "nube:local": "npm run nube:compilar && node packages/worker/scripts/local.ts",
+    "nube:clave": "node packages/worker/scripts/keys.ts",
+    "nube:migrar": "npm exec -w @vortex-wake/worker -- wrangler d1 migrations apply DB --remote",
+    "nube:publicar": "npm run nube:compilar && npm run nube:migrar && npm exec -w @vortex-wake/worker -- wrangler deploy",
+    "nube:subir-datos": "node packages/worker/scripts/upload-data.ts"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
