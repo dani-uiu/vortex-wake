@@ -1,0 +1,16 @@
+{
+  "format": "vortex-wake/team",
+  "version": 1,
+  "team": { "name": "Equipo Ejemplo", "number": "", "school": "Escuela de Ejemplo" },
+  "members": [
+    { "id": "ana", "name": "Ana Ejemplo", "roles": ["Construcción"] },
+    { "id": "beto", "name": "Beto Prueba", "roles": ["Programación"] },
+    { "id": "carla", "name": "Carla Muestra", "roles": ["Estrategia"] },
+    { "id": "dario", "name": "Darío Ficticio", "roles": ["Cableado"] }
+  ],
+  "robots": [
+    { "id": "robot-a", "name": "Robot A", "subsystems": ["chasis", "intake", "brazo"] },
+    { "id": "robot-b", "name": "Robot B", "subsystems": ["chasis", "intake"] }
+  ],
+  "editors": ["ana", "beto"]
+}

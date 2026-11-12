@@ -1,0 +1,17 @@
+{
+  "name": "@vortex-wake/app",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build"
+  },
+  "dependencies": {
+    "@vortex-wake/generator": "0.1.0",
+    "@vortex-wake/shared": "0.1.0"
+  },
+  "devDependencies": {
+    "vite": "^8.3.8"
+  }
+}

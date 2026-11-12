@@ -192,6 +192,18 @@
         "rationale": { "heading": "TextBox 12", "shape": "Rectangle 15" },
         "testResults": { "heading": "TextBox 14", "shape": "Rectangle 11" }
       }
+    },
+    "dailyWork": {
+      "section": "any",
+      "tables": {},
+      "base": {
+        "$comment": "No hay página modelo: se arma sobre la página de referencia en blanco, copiando la etiqueta, el título y un recuadro de la página 'donor' de la misma sección.",
+        "donor": "decision",
+        "title": { "es": "Trabajo del día: [subsistema]", "en": "Daily Work: [subsystem]" }
+      },
+      "fields": {
+        "notes": { "shape": "Rectangle 9" }
+      }
     }
   },
   "fixedPages": {

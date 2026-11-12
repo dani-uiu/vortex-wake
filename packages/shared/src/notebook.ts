@@ -234,6 +234,17 @@ export const PAGE_TYPES = {
     sections: ['strategy'],
     fields: { path: area, steps: table(4), rationale: area, testResults: area },
   },
+  /**
+   * Trabajo del día: lo capturado que todavía no tiene tipo de página. La
+   * plantilla no trae esta página; el generador la arma sobre la página de
+   * referencia en blanco, con la etiqueta de la sección, el título y un solo
+   * recuadro (texto y fotos).
+   */
+  dailyWork: {
+    placement: 'section',
+    sections: ['mechanics', 'coding', 'wiring', 'strategy'],
+    fields: { notes: area },
+  },
 } as const satisfies Record<string, PageTypeSpec>;
 
 export type PageType = keyof typeof PAGE_TYPES;

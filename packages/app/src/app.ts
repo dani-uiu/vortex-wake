@@ -1,0 +1,418 @@
+/**
+ * Estado de la app y acciones. Todo se guarda primero en el teléfono
+ * (IndexedDB) y después se manda con la cola de pendientes.
+ */
+
+import {
+  emptySession,
+  localDate,
+  mergeAttendance,
+  mergeSessions,
+  newId,
+  slugify,
+  type CaptureSession,
+  type Entry,
+  type EntryElement,
+  type SessionClosing,
+  type TeamConfig,
+} from '@vortex-wake/shared';
+import { ApiClient } from './api-client.ts';
+import { LocalDb, type StoredPhoto } from './db.ts';
+import { exifDate, isJpeg, resizePhoto } from './image.ts';
+import { HttpStatusError, NetworkError, SyncQueue, type FlushResult } from './sync-queue.ts';
+
+const LS_KEY = 'vw.key';
+const LS_ME = 'vw.me';
+const LS_AUTHORS = 'vw.lastAuthors';
+
+export type EntryStatus = 'local' | 'sent' | 'error';
+
+export interface SyncState {
+  /** `undefined` mientras no se sabe. */
+  online: boolean | undefined;
+  pending: number;
+  unauthorized: boolean;
+  lastError?: string;
+  lastContact?: number;
+}
+
+export function lsGet(k: string): string | null {
+  try {
+    return localStorage.getItem(k);
+  } catch {
+    return null;
+  }
+}
+export function lsSet(k: string, v: string | null): void {
+  try {
+    if (v === null) localStorage.removeItem(k);
+    else localStorage.setItem(k, v);
+  } catch {
+    /* modo privado: se sigue sin recordar */
+  }
+}
+
+/** Toma la clave del enlace del QR (`?k=`), la guarda y la quita de la barra de direcciones. */
+export function takeKeyFromUrl(): string | null {
+  const url = new URL(location.href);
+  const k = url.searchParams.get('k');
+  if (k) {
+    lsSet(LS_KEY, k);
+    url.searchParams.delete('k');
+    history.replaceState(null, '', url.pathname + url.search + url.hash);
+  }
+  return lsGet(LS_KEY);
+}
+
+export class App {
+  readonly db: LocalDb;
+  readonly api: ApiClient;
+  readonly queue: SyncQueue;
+  team: TeamConfig | undefined;
+  me: string | undefined;
+  readonly entries = new Map<string, Entry>();
+  readonly sessions = new Map<string, CaptureSession>();
+  pendingKeys = new Map<string, string | undefined>();
+  sync: SyncState = { online: undefined, pending: 0, unauthorized: false };
+  /** Vista de computadora: trae todas las sesiones, no solo la de hoy. */
+  wide = false;
+  private readonly listeners = new Set<() => void>();
+  private readonly photoUrls = new Map<string, string>();
+  private timer: number | undefined;
+  private tickCount = 0;
+
+  constructor(db: LocalDb, key: string) {
+    this.db = db;
+    this.api = new ApiClient(key);
+    this.queue = new SyncQueue(db, this.api);
+    this.me = lsGet(LS_ME) ?? undefined;
+  }
+
+  get today(): string {
+    return localDate();
+  }
+
+  subscribe(fn: () => void): () => void {
+    this.listeners.add(fn);
+    return () => this.listeners.delete(fn);
+  }
+
+  emit(): void {
+    for (const fn of this.listeners) fn();
+  }
+
+  async init(): Promise<void> {
+    this.team = await this.db.getTeam();
+    for (const e of await this.db.allEntries()) this.entries.set(e.id, e);
+    for (const s of await this.db.allSessions()) this.sessions.set(s.date, s);
+    await this.refreshPending();
+    await this.recoverPhotos();
+    addEventListener('online', () => void this.tick(true));
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') void this.tick(true);
+    });
+    this.timer = window.setInterval(() => void this.tick(false), 4000);
+    await this.tick(true);
+  }
+
+  stop(): void {
+    if (this.timer !== undefined) clearInterval(this.timer);
+  }
+
+  // --- sincronización --------------------------------------------------------------
+
+  private async refreshPending(): Promise<void> {
+    const ops = await this.db.listOps();
+    this.pendingKeys = new Map(ops.map((o) => [o.key, o.lastError]));
+    this.sync.pending = ops.length;
+    const err = ops.find((o) => o.lastError && o.lastError !== 'sin conexión');
+    if (err?.lastError) this.sync.lastError = err.lastError;
+    else delete this.sync.lastError;
+  }
+
+  /** Revisa conexión (trayendo lo nuevo del servidor) y manda lo pendiente. */
+  async tick(force: boolean): Promise<void> {
+    this.tickCount++;
+    if (force || this.tickCount % 2 === 0 || this.sync.online !== true) {
+      const wasOnline = this.sync.online;
+      await this.pull();
+      if (this.sync.online && wasOnline !== true) await this.queue.retryNow();
+    }
+    await this.flush();
+  }
+
+  async flush(): Promise<void> {
+    let r: FlushResult | undefined;
+    try {
+      r = await this.queue.flush();
+    } catch (e) {
+      console.error(e);
+    }
+    if (r) {
+      if (r.unauthorized) this.sync.unauthorized = true;
+      if (!r.online) this.sync.online = false;
+      else if (r.sent > 0) {
+        this.sync.online = true;
+        this.sync.lastContact = Date.now();
+      }
+    }
+    await this.refreshPending();
+    // Si el servidor devolvió versiones más nuevas, se recargan.
+    if (r && r.sent > 0) for (const e of await this.db.allEntries()) this.entries.set(e.id, e);
+    this.emit();
+  }
+
+  async pull(): Promise<void> {
+    try {
+      const s = await this.api.state(this.wide ? undefined : this.today);
+      this.sync.online = true;
+      this.sync.unauthorized = false;
+      this.sync.lastContact = Date.now();
+      await this.applyServerState(s.team, s.sessions, s.entries);
+    } catch (e) {
+      if (e instanceof NetworkError) this.sync.online = false;
+      else if (e instanceof HttpStatusError && e.status === 401) {
+        this.sync.online = true;
+        this.sync.unauthorized = true;
+      } else console.error(e);
+    }
+    this.emit();
+  }
+
+  private async applyServerState(team: TeamConfig, sessions: CaptureSession[], entries: Entry[]): Promise<void> {
+    // Equipo: el del servidor, más integrantes agregados aquí que aún no se mandan.
+    const localOnly = (this.team?.members ?? []).filter((m) => this.pendingKeys.has(`member:${m.id}`) && !team.members.some((x) => x.id === m.id));
+    this.team = { ...team, members: [...team.members, ...localOnly] };
+    await this.db.setTeam(this.team);
+    for (const s of sessions) {
+      const local = this.sessions.get(s.date);
+      const merged = local ? mergeSessions(local, s) : s;
+      this.sessions.set(s.date, merged);
+      await this.db.putSession(merged);
+    }
+    for (const e of entries) {
+      const local = this.entries.get(e.id);
+      if (this.pendingKeys.has(`entry:${e.id}`)) continue; // lo de aquí todavía no se manda
+      if (!local || e.updatedAt > local.updatedAt) {
+        this.entries.set(e.id, e);
+        await this.db.putEntry(e);
+      }
+    }
+  }
+
+  entryStatus(e: Entry): EntryStatus {
+    const keys = [`entry:${e.id}`, ...e.elements.filter((el) => el.type === 'photo').map((el) => `photo:${(el as { photoId: string }).photoId}`)];
+    let pending = false;
+    for (const k of keys) {
+      if (!this.pendingKeys.has(k)) continue;
+      pending = true;
+      const err = this.pendingKeys.get(k);
+      if (err && err !== 'sin conexión') return 'error';
+    }
+    return pending ? 'local' : 'sent';
+  }
+
+  // --- integrantes y asistencia ------------------------------------------------------
+
+  memberName(id: string): string {
+    return this.team?.members.find((m) => m.id === id)?.name ?? id;
+  }
+
+  session(date = this.today): CaptureSession {
+    return this.sessions.get(date) ?? emptySession(date);
+  }
+
+  presentIds(date = this.today): string[] {
+    return this.session(date).attendance.map((a) => a.memberId);
+  }
+
+  async chooseMember(id: string): Promise<void> {
+    this.me = id;
+    lsSet(LS_ME, id);
+    const date = this.today;
+    const attendance = { memberId: id, checkIn: new Date().toISOString() };
+    const merged = mergeAttendance(this.session(date), attendance);
+    this.sessions.set(date, merged);
+    await this.db.putSession(merged);
+    if (!this.lastAuthors().includes(id)) this.setLastAuthors([id]);
+    await this.queue.enqueue({ kind: 'attendance', date, attendance });
+    this.emit();
+    void this.flush();
+  }
+
+  async addMember(name: string): Promise<string> {
+    const clean = name.trim();
+    let id = slugify(clean);
+    const team = this.team;
+    if (!team) throw new Error('todavía no se carga el equipo');
+    const existing = team.members.find((m) => m.name.toLowerCase() === clean.toLowerCase());
+    if (existing) return existing.id;
+    while (team.members.some((m) => m.id === id)) id = `${slugify(clean)}-${newId().slice(0, 4)}`;
+    this.team = { ...team, members: [...team.members, { id, name: clean, roles: [] }] };
+    await this.db.setTeam(this.team);
+    await this.queue.enqueue({ kind: 'member', memberId: id, name: clean });
+    void this.flush();
+    return id;
+  }
+
+  lastAuthors(): string[] {
+    try {
+      const v = JSON.parse(lsGet(LS_AUTHORS) ?? '[]') as unknown;
+      return Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : [];
+    } catch {
+      return [];
+    }
+  }
+  setLastAuthors(ids: string[]): void {
+    lsSet(LS_AUTHORS, JSON.stringify(ids));
+  }
+
+  // --- entradas ----------------------------------------------------------------------
+
+  newEntry(elements: EntryElement[] = []): Entry {
+    const now = new Date().toISOString();
+    const authors = this.lastAuthors();
+    const e: Entry = {
+      id: newId(),
+      sessionDate: this.today,
+      createdAt: now,
+      updatedAt: now,
+      authorIds: authors.length > 0 ? authors : this.me ? [this.me] : [],
+      marks: [],
+      elements,
+    };
+    if (this.me) e.capturedBy = this.me;
+    return e;
+  }
+
+  /** Guarda en el teléfono (al instante) y anota el envío. */
+  async saveEntry(entry: Entry): Promise<Entry> {
+    const prev = this.entries.get(entry.id);
+    let updatedAt = new Date().toISOString();
+    if (prev && updatedAt <= prev.updatedAt) updatedAt = new Date(Date.parse(prev.updatedAt) + 1).toISOString();
+    const saved: Entry = structuredClone({ ...entry, updatedAt });
+    await this.db.putEntry(saved);
+    this.entries.set(saved.id, saved);
+    await this.queue.enqueue({ kind: 'entry', entryId: saved.id });
+    this.pendingKeys.set(`entry:${saved.id}`, undefined);
+    this.emit();
+    void this.flush();
+    return saved;
+  }
+
+  async deleteEntry(id: string): Promise<void> {
+    const e = this.entries.get(id);
+    if (e) await this.saveEntry({ ...e, deleted: true });
+  }
+
+  liveEntries(date?: string): Entry[] {
+    return [...this.entries.values()]
+      .filter((e) => !e.deleted && (!date || e.sessionDate === date))
+      .sort((a, b) => (a.createdAt < b.createdAt ? 1 : a.createdAt > b.createdAt ? -1 : 0));
+  }
+
+  threads(): string[] {
+    const seen = new Map<string, string>();
+    for (const e of this.entries.values()) if (e.thread && !e.deleted) {
+      const prev = seen.get(e.thread);
+      if (!prev || e.updatedAt > prev) seen.set(e.thread, e.updatedAt);
+    }
+    return [...seen.entries()].sort((a, b) => (a[1] < b[1] ? 1 : -1)).map(([t]) => t);
+  }
+
+  // --- fotos -------------------------------------------------------------------------
+
+  /**
+   * Foto primero: guarda el original en el teléfono y la entrada (nueva o
+   * existente) en ese mismo momento; después reduce la foto en segundo plano.
+   */
+  async addPhotos(files: File[], entryId?: string): Promise<Entry | undefined> {
+    if (files.length === 0) return undefined;
+    let entry = entryId ? this.entries.get(entryId) : undefined;
+    entry = entry ? structuredClone(entry) : this.newEntry();
+    const toProcess: StoredPhoto[] = [];
+    for (const file of files) {
+      const bytes = await file.arrayBuffer();
+      const id = newId();
+      const takenAt = exifDate(new Uint8Array(bytes)) ?? new Date(file.lastModified || Date.now()).toISOString();
+      const photo: StoredPhoto = { id, entryId: entry.id, bytes, type: file.type || 'image/jpeg', processed: false, takenAt };
+      await this.db.putPhoto(photo);
+      // El envío se anota antes de guardar la entrada: si la pestaña se cierra
+      // aquí, al abrir se recupera la entrada a partir de la foto.
+      await this.queue.enqueue({ kind: 'photo', photoId: id });
+      this.pendingKeys.set(`photo:${id}`, undefined);
+      entry.elements.push({ id: newId(), type: 'photo', photoId: id, takenAt });
+      toProcess.push(photo);
+    }
+    const saved = await this.saveEntry(entry);
+    void this.processPhotos(toProcess);
+    return saved;
+  }
+
+  private async processPhotos(photos: StoredPhoto[]): Promise<void> {
+    for (const p of photos) {
+      let done: StoredPhoto;
+      try {
+        const r = await resizePhoto(p.bytes, p.type);
+        done = { ...p, bytes: r.bytes, type: 'image/jpeg', processed: true, width: r.width, height: r.height };
+      } catch (e) {
+        // Si el navegador no puede leerla pero ya es JPEG, se manda como está.
+        done = { ...p, processed: true, error: isJpeg(p.bytes) ? undefined : (e as Error).message };
+        if (!done.error) delete done.error;
+      }
+      await this.db.putPhoto(done);
+      const old = this.photoUrls.get(p.id);
+      if (old) {
+        URL.revokeObjectURL(old);
+        this.photoUrls.delete(p.id);
+      }
+    }
+    this.emit();
+    void this.flush();
+  }
+
+  /** Al abrir: fotos que quedaron sin reducir, o sin entrada si se cerró la pestaña a la mitad. */
+  private async recoverPhotos(): Promise<void> {
+    const photos = await this.db.allPhotos();
+    const pending = photos.filter((p) => !p.processed);
+    for (const p of photos) {
+      const e = this.entries.get(p.entryId);
+      if (e) continue;
+      const entry = this.newEntry([{ id: newId(), type: 'photo', photoId: p.id, ...(p.takenAt ? { takenAt: p.takenAt } : {}) }]);
+      entry.id = p.entryId;
+      await this.saveEntry(entry);
+      await this.queue.enqueue({ kind: 'photo', photoId: p.id });
+    }
+    if (pending.length > 0) void this.processPhotos(pending);
+  }
+
+  /** URL para mostrar una foto: la del teléfono si está, si no la del servidor. */
+  async photoUrl(id: string): Promise<string> {
+    const cached = this.photoUrls.get(id);
+    if (cached) return cached;
+    const p = await this.db.getPhoto(id);
+    if (!p) return this.api.photoUrl(id);
+    const url = URL.createObjectURL(new Blob([p.bytes], { type: p.type }));
+    this.photoUrls.set(id, url);
+    return url;
+  }
+
+  async photoBytes(id: string): Promise<Uint8Array> {
+    const p = await this.db.getPhoto(id);
+    if (p?.processed && isJpeg(p.bytes)) return new Uint8Array(p.bytes);
+    return this.api.photo(id);
+  }
+
+  // --- cierre ------------------------------------------------------------------------
+
+  async saveClosing(c: Omit<SessionClosing, 'updatedAt' | 'by'>, date = this.today): Promise<void> {
+    const closing: SessionClosing = { ...c, updatedAt: new Date().toISOString() };
+    if (this.me) closing.by = this.me;
+    const s = { ...this.session(date), closing };
+    this.sessions.set(date, s);
+    await this.db.putSession(s);
+    await this.queue.enqueue({ kind: 'closing', date });
+    this.emit();
+    void this.flush();
+  }
+}

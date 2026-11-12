@@ -40,6 +40,12 @@ export interface PageTypeMapping {
   /** Formas cuyo texto se borra (instrucciones). */
   clear?: string[];
   fields: Record<string, FieldMapping>;
+  /**
+   * La plantilla no trae esta página: se arma sobre la página de referencia en
+   * blanco, copiando la etiqueta de sección, el título y las formas de los
+   * campos de la página `donor` de la misma sección.
+   */
+  base?: { donor: PageType; title: { es: string; en: string } };
 }
 
 export interface TocMapping {

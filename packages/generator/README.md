@@ -88,6 +88,9 @@ Campos de cada tipo de página:
 | `reflection` | las cuatro | period r, worked r, didNotWork r, learned r, planChanges r, tracker t(2, 3 filas fijas) |
 | `gameAnalysis` | strategy | priorities t(5), matchPlan t(2, 3 filas fijas), strategy r, participants r |
 | `autonomousPlan` | strategy | path r, steps t(4), rationale r, testResults r |
+| `dailyWork` | las cuatro | notes r (texto y fotos) |
+
+**Trabajo del día** (`dailyWork`): la plantilla no la trae. El generador la arma sobre la página de referencia en blanco (con su pie), copiando la etiqueta de la sección (sin la etapa), el título y un recuadro de la página "Registro de decisión" de la misma sección; el recuadro va del primer encabezado al límite del contenido. Se describe en `field-map.json` con `base` (página donadora y título en español e inglés). Es donde el armado automático de la app pone lo que no tiene tipo.
 
 Páginas automáticas (no se escriben en el documento): tabla de contenido, **Team Members & Roles** (de `members`; si hay una página `teamMembers` se le agregan sus recuadros), **Season Timeline** (de `sessions`, con las páginas fechadas ese día), **Change Log** de Mechanics, Coding y Wiring (de los `changes` de cada página; la plantilla no trae Change Log en Strategy) y **Credit Summary** (de los `credits`, con las páginas donde se usó cada fuente).
 

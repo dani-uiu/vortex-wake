@@ -92,12 +92,26 @@ describe.each(TEMPLATES)('plantilla %s', (_label, path) => {
     // Si la plantilla agrega una forma nueva a una página modelo, la huella deja de coincidir
     // y modelFor() falla; esta prueba lo dice con nombre y apellido.
     for (const type of PAGE_TYPE_IDS) {
+      if (map.pageTypes[type].base) continue; // se arma sobre la página en blanco (ver la prueba de abajo)
       for (const section of sectionsFor(type)) {
         const fp = pageTypeFingerprint(map, type);
         const candidates = template.sectionSlides(section).filter((s) => !s.divider);
         const found = candidates.some((s) => matchesFingerprint(s, fp));
         expect(found, `no hay página "${type}" en "${section}" con exactamente las formas ${fp.shapes.join(', ')}`).toBe(true);
       }
+    }
+  });
+
+  it('arma "trabajo del día" sobre la página de referencia en blanco, con etiqueta, título y recuadro', () => {
+    const blank = template.blankReference();
+    for (const section of sectionsFor('dailyWork')) {
+      const slide = template.modelFor('dailyWork', section, 'es');
+      expect(slide.index).toBe(blank.index);
+      const names = slide.shapes.map((s) => s.name);
+      expect(names).toEqual(expect.arrayContaining([map.standard.label, map.standard.title, 'Rectangle 9']));
+      const xml = template.pkg.getText(slide.part);
+      expect(xml).toContain('Trabajo del día: [subsistema]');
+      expect(xml).not.toContain(' · ');
     }
   });
 });

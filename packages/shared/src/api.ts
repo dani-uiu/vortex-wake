@@ -1,0 +1,207 @@
+/**
+ * Contrato HTTP entre la app y el servidor.
+ *
+ * Hoy lo implementa el servidor local (`packages/dev-server`, archivos en
+ * `data/`); después lo implementará un Worker de Cloudflare (D1 + R2) con las
+ * mismas rutas, los mismos cuerpos y las mismas reglas de mezcla (que viven
+ * aquí, como funciones puras, para que ambos se comporten igual).
+ *
+ * Reglas:
+ * - Acceso con la clave del equipo: encabezado `x-team-key` o, solo para
+ *   `GET` de fotos y plantilla (que se piden desde `<img>`), `?k=`.
+ * - Todo es idempotente: los ids los genera el cliente. Mandar dos veces la
+ *   misma entrada, foto o asistencia no duplica nada.
+ * - Entradas: gana la de `updatedAt` más reciente (entrada completa). Si el
+ *   servidor tiene una más nueva, responde `applied: false` con la suya.
+ * - Asistencia: unión por integrante (se queda la hora de entrada más temprana).
+ * - Cierre de sesión: gana el de `updatedAt` más reciente.
+ * - Fotos: inmutables; `PUT` de una foto que ya existe responde 200 sin cambiarla.
+ *
+ * Rutas:
+ *
+ * | Método y ruta                          | Cuerpo            | Respuesta           |
+ * |----------------------------------------|-------------------|---------------------|
+ * | GET  /api/state[?date=AAAA-MM-DD]      | —                 | StateResponse       |
+ * | PUT  /api/team                         | TeamConfig        | { team }            |
+ * | POST /api/team/members                 | AddMemberRequest  | { team }            |
+ * | PUT  /api/entries/:id                  | Entry             | PutEntryResponse    |
+ * | PUT  /api/photos/:id                   | bytes JPEG        | PutPhotoResponse    |
+ * | GET  /api/photos/:id                   | —                 | bytes JPEG          |
+ * | POST /api/sessions/:date/attendance    | Attendance        | { session }         |
+ * | PUT  /api/sessions/:date/closing       | SessionClosing    | { session, applied }|
+ * | GET  /api/template                     | —                 | plantilla .pptx     |
+ */
+
+import {
+  ENTRY_KINDS,
+  ENTRY_MARKS,
+  TEAM_FORMAT,
+  type Attendance,
+  type CaptureSession,
+  type Entry,
+  type SessionClosing,
+  type TeamConfig,
+} from './model.ts';
+import { SECTIONS } from './notebook.ts';
+import { isValidDate } from './validate.ts';
+
+export const API_VERSION = 1;
+export const TEAM_KEY_HEADER = 'x-team-key';
+export const TEAM_KEY_QUERY = 'k';
+/** Tamaño máximo de una foto ya reducida (las del teléfono pesan ~0.3-0.8 MB). */
+export const MAX_PHOTO_BYTES = 15 * 1024 * 1024;
+
+export interface StateResponse {
+  version: typeof API_VERSION;
+  team: TeamConfig;
+  sessions: CaptureSession[];
+  entries: Entry[];
+  serverTime: string;
+}
+
+export interface AddMemberRequest {
+  id: string;
+  name: string;
+}
+
+export interface PutEntryResponse {
+  /** `false` si el servidor ya tenía una versión más nueva (se devuelve esa). */
+  applied: boolean;
+  entry: Entry;
+}
+
+export interface PutPhotoResponse {
+  id: string;
+  bytes: number;
+  /** `false` si la foto ya existía. */
+  created: boolean;
+}
+
+export interface ErrorResponse {
+  error: string;
+}
+
+export const apiPath = {
+  state: (date?: string) => (date ? `/api/state?date=${encodeURIComponent(date)}` : '/api/state'),
+  team: () => '/api/team',
+  members: () => '/api/team/members',
+  entry: (id: string) => `/api/entries/${encodeURIComponent(id)}`,
+  photo: (id: string) => `/api/photos/${encodeURIComponent(id)}`,
+  attendance: (date: string) => `/api/sessions/${date}/attendance`,
+  closing: (date: string) => `/api/sessions/${date}/closing`,
+  template: () => '/api/template',
+};
+
+// --- Mezcla -------------------------------------------------------------------
+
+/** Gana la versión con `updatedAt` más reciente; en empate, la que llega (es idempotente). */
+export function mergeEntry(current: Entry | undefined, incoming: Entry): PutEntryResponse {
+  if (current && current.updatedAt > incoming.updatedAt) return { applied: false, entry: current };
+  return { applied: true, entry: incoming };
+}
+
+export function emptySession(date: string): CaptureSession {
+  return { date, attendance: [] };
+}
+
+/** Unión por integrante; se conserva la hora de entrada más temprana. */
+export function mergeAttendance(session: CaptureSession, a: Attendance): CaptureSession {
+  const existing = session.attendance.find((x) => x.memberId === a.memberId);
+  if (existing && existing.checkIn <= a.checkIn) return session;
+  const attendance = session.attendance.filter((x) => x.memberId !== a.memberId);
+  attendance.push({ memberId: a.memberId, checkIn: a.checkIn });
+  attendance.sort((x, y) => (x.checkIn < y.checkIn ? -1 : x.checkIn > y.checkIn ? 1 : 0));
+  return { ...session, attendance };
+}
+
+export function mergeClosing(session: CaptureSession, closing: SessionClosing): { session: CaptureSession; applied: boolean } {
+  if (session.closing && session.closing.updatedAt > closing.updatedAt) return { session, applied: false };
+  return { session: { ...session, closing }, applied: true };
+}
+
+/** Une dos sesiones del mismo día (por ejemplo, la local y la del servidor). */
+export function mergeSessions(a: CaptureSession, b: CaptureSession): CaptureSession {
+  let out = a;
+  for (const att of b.attendance) out = mergeAttendance(out, att);
+  if (b.closing) out = mergeClosing(out, b.closing).session;
+  return out;
+}
+
+// --- Validación de lo que llega al servidor -----------------------------------------
+
+export const ID_PATTERN = /^[A-Za-z0-9_-]{1,64}$/;
+
+const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
+const isStr = (v: unknown): v is string => typeof v === 'string';
+const optStr = (v: unknown) => v === undefined || isStr(v);
+const isStrArr = (v: unknown): v is string[] => Array.isArray(v) && v.every(isStr);
+
+/** Devuelve un mensaje de error (en español) o `undefined` si la entrada es válida. */
+export function checkEntry(v: unknown): string | undefined {
+  if (!isObj(v)) return 'la entrada debe ser un objeto';
+  if (!isStr(v.id) || !ID_PATTERN.test(v.id)) return 'id de entrada inválido';
+  if (!isValidDate(v.sessionDate)) return 'sessionDate inválida';
+  if (!isStr(v.createdAt) || !isStr(v.updatedAt)) return 'faltan createdAt o updatedAt';
+  if (!isStrArr(v.authorIds)) return 'authorIds debe ser una lista de ids';
+  if (!optStr(v.capturedBy) || !optStr(v.robotId) || !optStr(v.subsystem) || !optStr(v.thread)) return 'campos de texto inválidos';
+  if (v.section !== undefined && !(SECTIONS as readonly unknown[]).includes(v.section)) return 'sección inválida';
+  if (v.kind !== undefined && !(ENTRY_KINDS as readonly unknown[]).includes(v.kind)) return 'tipo de entrada inválido';
+  if (!Array.isArray(v.marks) || !v.marks.every((m) => (ENTRY_MARKS as readonly unknown[]).includes(m))) return 'marcas inválidas';
+  if (v.deleted !== undefined && typeof v.deleted !== 'boolean') return 'deleted debe ser true o false';
+  if (!Array.isArray(v.elements)) return 'elements debe ser una lista';
+  for (const el of v.elements) {
+    const msg = checkElement(el);
+    if (msg) return msg;
+  }
+  return undefined;
+}
+
+function checkElement(el: unknown): string | undefined {
+  if (!isObj(el) || !isStr(el.id)) return 'elemento inválido';
+  switch (el.type) {
+    case 'photo':
+      return isStr(el.photoId) && ID_PATTERN.test(el.photoId) && optStr(el.caption) && optStr(el.takenAt) ? undefined : 'foto inválida';
+    case 'text':
+      return isStr(el.text) ? undefined : 'texto inválido';
+    case 'link':
+      return isStr(el.url) && optStr(el.title) ? undefined : 'enlace inválido';
+    case 'list':
+      return isStrArr(el.items) ? undefined : 'lista inválida';
+    case 'table':
+      return isStrArr(el.header) && Array.isArray(el.rows) && el.rows.every(isStrArr) ? undefined : 'tabla inválida';
+    case 'trials':
+      return Array.isArray(el.trials) && el.trials.every((t) => isObj(t) && typeof t.ok === 'boolean' && isStr(t.at) && optStr(t.note))
+        ? undefined
+        : 'contador de pruebas inválido';
+    default:
+      return `tipo de elemento desconocido: ${String(el.type)}`;
+  }
+}
+
+export function checkAttendance(v: unknown): string | undefined {
+  if (!isObj(v) || !isStr(v.memberId) || !ID_PATTERN.test(v.memberId) || !isStr(v.checkIn)) return 'asistencia inválida';
+  return undefined;
+}
+
+export function checkClosing(v: unknown): string | undefined {
+  if (!isObj(v) || !isStr(v.updatedAt)) return 'cierre inválido';
+  if (!optStr(v.whatWeDid) || !optStr(v.whatFailed) || !optStr(v.whatsNext) || !optStr(v.by)) return 'cierre inválido';
+  return undefined;
+}
+
+export function checkTeam(v: unknown): string | undefined {
+  if (!isObj(v) || v.format !== TEAM_FORMAT) return `el equipo debe tener "format": "${TEAM_FORMAT}"`;
+  if (!isObj(v.team) || !isStr(v.team.name)) return 'falta team.name';
+  if (!Array.isArray(v.members)) return 'falta la lista de integrantes';
+  const ids = new Set<string>();
+  for (const m of v.members) {
+    if (!isObj(m) || !isStr(m.id) || !ID_PATTERN.test(m.id) || !isStr(m.name) || m.name.trim() === '') return 'integrante inválido';
+    if (ids.has(m.id)) return `id de integrante repetido: ${m.id}`;
+    ids.add(m.id);
+  }
+  if (!Array.isArray(v.robots)) return 'falta la lista de robots';
+  for (const r of v.robots) {
+    if (!isObj(r) || !isStr(r.id) || !isStr(r.name) || !isStrArr(r.subsystems)) return 'robot inválido';
+  }
+  return undefined;
+}

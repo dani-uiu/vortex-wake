@@ -1,0 +1,16 @@
+{
+  "name": "@vortex-wake/dev-server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/server.ts"
+  },
+  "scripts": {
+    "start": "node src/main.ts"
+  },
+  "dependencies": {
+    "@vortex-wake/shared": "0.1.0",
+    "qrcode-generator": "^2.0.4"
+  }
+}

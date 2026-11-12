@@ -134,7 +134,7 @@ export async function generateNotebook(params: {
         physical.push({ logical: lp, model: lp.slide, group: lp.group });
         break;
       case 'content': {
-        const model = template.modelFor(lp.type, lp.section);
+        const model = template.modelFor(lp.type, lp.section, lang);
         const mapping = map.pageTypes[lp.type];
         const slideDoc = template.pkg.getXml(model.part);
         const geom = readModelGeometry(slideDoc.documentElement as unknown as Element, mapping.fields, bottomLimit);
@@ -215,7 +215,7 @@ export async function generateNotebook(params: {
   // Se guardan las diapositivas modelo y se quitan del paquete: la salida solo
   // trae las copias, numeradas desde slide1.xml.
   const models = new Map<string, { xml: string; rels: Relationship[] }>();
-  for (const s of template.slides) {
+  for (const s of [...template.slides, ...template.synthetic]) {
     models.set(s.part, { xml: out.getText(s.part), rels: out.readRels(s.part) });
     out.delete(s.part);
     out.delete(relsPathFor(s.part));

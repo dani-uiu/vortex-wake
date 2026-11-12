@@ -3,7 +3,7 @@
  * separadores) y búsqueda de páginas modelo por huella.
  */
 
-import type { PageType } from '@vortex-wake/shared';
+import type { Language, PageType } from '@vortex-wake/shared';
 import {
   defaultFieldMap,
   fixedPageFingerprint,
@@ -14,7 +14,7 @@ import {
   type TemplateSection,
 } from './field-map.ts';
 import { OpcPackage, REL_TYPES, resolveTarget } from './opc.ts';
-import { NS, child, children, descendants, elementChildren, path, type Element } from './xml.ts';
+import { NS, child, children, descendants, elementChildren, parseXml, path, serializeXml, type Element } from './xml.ts';
 
 export const EMU_PER_PT = 12700;
 
@@ -67,7 +67,8 @@ export class Template {
     return this.slides.find((s) => s.section === section && !s.divider && matchesFingerprint(s, fp));
   }
 
-  modelFor(type: PageType, section: TemplateSection): TemplateSlide {
+  modelFor(type: PageType, section: TemplateSection, language: Language = 'en'): TemplateSlide {
+    if (this.map.pageTypes[type].base) return this.syntheticModel(type, section, language);
     const fp = pageTypeFingerprint(this.map, type);
     const slide = this.findByFingerprint(fp, section);
     if (!slide) {
@@ -100,6 +101,88 @@ export class Template {
   sectionSlides(section: TemplateSection): TemplateSlide[] {
     return this.slides.filter((s) => s.section === section);
   }
+
+  /** Páginas modelo armadas por el generador (no están en la lista de la plantilla). */
+  readonly synthetic: TemplateSlide[] = [];
+  private readonly syntheticCache = new Map<string, TemplateSlide>();
+
+  /** Página de referencia en blanco: solo trae los marcadores del pie. */
+  blankReference(): TemplateSlide {
+    const blank = this.sectionSlides('reference').find((s) => !s.divider && s.shapes.length > 0 && s.shapes.every((sh) => sh.placeholder));
+    if (!blank) throw new TemplateError('La plantilla no tiene la página de referencia en blanco (solo con el pie).');
+    return blank;
+  }
+
+  /**
+   * Arma una página modelo que la plantilla no trae: toma la página de
+   * referencia en blanco (con su pie) y le copia la etiqueta de sección, el
+   * título y las formas de los campos de la página `donor` de la misma sección.
+   * El recuadro ocupa desde el primer encabezado de la página donadora hasta el
+   * límite inferior del contenido.
+   */
+  private syntheticModel(type: PageType, section: TemplateSection, language: Language): TemplateSlide {
+    const key = `${type}/${section}/${language}`;
+    const cached = this.syntheticCache.get(key);
+    if (cached) return cached;
+    const mapping = this.map.pageTypes[type];
+    const base = mapping.base;
+    if (!base) throw new TemplateError(`"${type}" no es una página armada`);
+    const blank = this.blankReference();
+    const donor = this.modelFor(base.donor, section);
+    const doc = parseXml(this.pkg.getText(blank.part));
+    const root = doc.documentElement as unknown as Element;
+    const donorRoot = parseXml(this.pkg.getText(donor.part)).documentElement as unknown as Element;
+    const donorShapes = new Map(shapeElements(donorRoot).map((el) => [shapeName(el), el]));
+    const std = this.map.standard;
+    const skip = new Set([std.label, std.title, ...std.remove, ...std.keep]);
+    const top = Math.min(
+      ...shapeElements(donorRoot)
+        .filter((el) => !skip.has(shapeName(el)) && !descendants(el, NS.p, 'ph')[0])
+        .map((el) => readBox(el)?.y ?? Number.POSITIVE_INFINITY),
+    );
+    const tree = spTreeOf(root);
+    let nextId = 1 + Math.max(1, ...descendants(root, NS.p, 'cNvPr').map((c) => Number(c.getAttribute('id') ?? 0)));
+    const copy = (name: string): Element => {
+      const src = donorShapes.get(name);
+      if (!src) throw new TemplateError(`la página "${base.donor}" de "${section}" no tiene la forma "${name}"`);
+      const el = doc.importNode(src, true) as unknown as Element;
+      cNvPrOf(el)?.setAttribute('id', String(nextId++));
+      tree.appendChild(el);
+      return el;
+    };
+    // Etiqueta: solo la sección ("MECÁNICA · DESARROLLAR" → "MECÁNICA").
+    const label = copy(std.label);
+    replaceText(label, (t) => t.split(' · ')[0] ?? t);
+    const title = copy(std.title);
+    replaceText(title, () => base.title[language]);
+    const fieldShapes = Object.values(mapping.fields);
+    const bottom = this.map.contentBottomPt * EMU_PER_PT;
+    for (const f of fieldShapes) {
+      const el = copy(f.shape);
+      writeBox(el, { y: top, cy: bottom - top });
+    }
+    const part = `ppt/slides/vw-${type}-${section}-${language}.xml`;
+    this.pkg.setText(part, serializeXml(doc));
+    this.pkg.writeRels(part, this.pkg.readRels(blank.part).filter((r) => r.type !== REL_TYPES.notesSlide));
+    const slide: TemplateSlide = { index: blank.index, part, section, divider: false, shapes: readShapes(root) };
+    this.syntheticCache.set(key, slide);
+    this.synthetic.push(slide);
+    return slide;
+  }
+}
+
+/** Cambia el texto de una forma dejando un solo renglón con el formato del primero. */
+function replaceText(shape: Element, change: (current: string) => string): void {
+  const runs = descendants(shape, NS.a, 'r');
+  const current = runs.map((r) => descendants(r, NS.a, 't').map((t) => t.textContent ?? '').join('')).join('');
+  const first = runs[0];
+  const t = first ? descendants(first, NS.a, 't')[0] : undefined;
+  if (!first || !t || !t.ownerDocument) return;
+  while (t.firstChild) t.removeChild(t.firstChild);
+  t.appendChild(t.ownerDocument.createTextNode(change(current)));
+  for (const r of runs.slice(1)) r.parentNode?.removeChild(r);
+  const paras = descendants(shape, NS.a, 'p');
+  for (const p of paras) if (p !== first.parentNode) p.parentNode?.removeChild(p);
 }
 
 export function matchesFingerprint(slide: TemplateSlide, fp: Fingerprint): boolean {

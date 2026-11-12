@@ -4,18 +4,25 @@
   "type": "module",
   "workspaces": [
     "packages/shared",
-    "packages/generator"
+    "packages/generator",
+    "packages/app",
+    "packages/dev-server"
   ],
   "engines": {
     "node": ">=22.18"
   },
   "scripts": {
     "test": "vitest run",
-    "typecheck": "tsc -p packages/shared && tsc -p packages/generator",
-    "generate": "node packages/generator/src/cli.ts"
+    "typecheck": "tsc -p packages/shared && tsc -p packages/generator && tsc -p packages/dev-server && tsc -p packages/app",
+    "generate": "node packages/generator/src/cli.ts",
+    "build": "npm run build -w @vortex-wake/app",
+    "servidor": "node packages/dev-server/src/main.ts",
+    "taller": "npm run build && node packages/dev-server/src/main.ts --open",
+    "e2e": "npm run build && node packages/app/e2e/e2e.ts"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
+    "playwright-core": "^1.56.1",
     "typescript": "^5.9.3",
     "vitest": "^5.1.0"
   }
