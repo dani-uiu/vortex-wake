@@ -3,7 +3,8 @@
 Uso: python -I tools/translate-template/apply.py [EN.pptx] [es.json] [ES.pptx]
 
 Sustituye el texto de los <a:t> párrafo por párrafo en ppt/slides, ppt/slideLayouts
-y ppt/slideMasters. No toca nada más del XML. Conserva el orden de las entradas del
+y ppt/slideMasters, y marca los párrafos traducidos y los vacíos con lang="es-MX"
+para que PowerPoint los revise como español. No toca nada más del XML. Conserva el orden de las entradas del
 zip y el método de compresión de cada una.
 
 Al terminar imprime los párrafos que quedaron sin traducir y sale con error si
@@ -39,6 +40,18 @@ FONT_SHRINK = {
 }
 
 
+LANG = "es-MX"
+RPR_TAG = re.compile(r"<a:(rPr|endParaRPr)\b([^>]*?)(/?)>")
+LANG_ATTR = re.compile(r'\s+lang="[^"]*"')
+RUN_NO_RPR = re.compile(r"<a:r>(?!<a:rPr\b)")
+
+
+def mark_spanish(body):
+    """Marca los fragmentos traducidos como español de México (revisión ortográfica)."""
+    body = RPR_TAG.sub(lambda m: f'<a:{m.group(1)} lang="{LANG}"{LANG_ATTR.sub("", m.group(2))}{m.group(3)}>', body)
+    return RUN_NO_RPR.sub(f'<a:r><a:rPr lang="{LANG}"/>', body)
+
+
 def key_of(side):
     return tuple(side) if isinstance(side, list) else (side,)
 
@@ -62,7 +75,9 @@ def main():
             body = m.group(1)
             runs = tuple(html.unescape(t) for t in RUN.findall(body))
             if not any(r.strip() for r in runs):
-                return m.group(0)
+                # Párrafo vacío (recuadros y celdas por llenar): lo que el equipo
+                # escriba ahí hereda este idioma, así que también va en español.
+                return "<a:p>" + mark_spanish(body) + "</a:p>"
             tr = table.get(runs)
             if tr is None:
                 missing.setdefault(runs, []).append(name)
@@ -70,6 +85,7 @@ def main():
             used.add(runs)
             it = iter(tr)
             body = RUN.sub(lambda r: "<a:t>" + html.escape(next(it), quote=False) + "</a:t>", body)
+            body = mark_spanish(body)
             sk = (name, "".join(runs))
             if sk in FONT_SHRINK:
                 old, new = FONT_SHRINK[sk]
