@@ -194,10 +194,11 @@ try {
   let a = await ctxA.newPage();
   watch(a, 'A');
   await a.goto(backend.captureLink());
-  await a.waitForSelector('.who-btn');
+  await a.waitForSelector('[data-testid=who-select]');
   assert(!hasKey(a.url()), `la clave se quita de la barra de direcciones (${a.url()})`);
   await shot(a, '01-quien-eres');
-  await a.click('[data-member="ana"]');
+  await a.selectOption('[data-testid=who-select]', 'ana');
+  await a.click('[data-testid=who-enter]');
   await a.waitForSelector('[data-testid=entry-list]');
   await until('asistencia de Ana en el servidor', async () => (await backend.sessions()).some((s) => s.attendance.some((x) => x.memberId === 'ana')));
   log('A: eligió su nombre y quedó su asistencia');
@@ -304,7 +305,9 @@ try {
   const b = await ctxB.newPage();
   watch(b, 'B');
   await b.goto(backend.captureLink());
-  await b.click('[data-member="beto"]');
+  await b.waitForSelector('[data-testid=who-select]');
+  await b.selectOption('[data-testid=who-select]', 'beto');
+  await b.click('[data-testid=who-enter]');
   await b.waitForSelector('[data-testid=entry-list]');
   await until('B ve las entradas de A', async () => (await b.locator('.card').count()) >= 5);
   await b.click('[data-testid=new-text]');

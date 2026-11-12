@@ -175,12 +175,8 @@ input:focus, textarea:focus, select:focus { border-color: var(--accent); outline
 .link-muted { color: var(--muted); font-size: 14px; }
 
 /* ¿Quién eres? */
-.who { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 8px 0 20px; }
-.who-btn {
-  min-height: 64px; padding: 8px 12px; border-radius: 14px; border: 1.5px solid var(--line);
-  background: var(--surface); font-size: 17px; font-weight: 700; text-align: center;
-}
-.who-btn.on { border-color: var(--accent); background: var(--accent-soft); }
+.who { display: flex; flex-direction: column; gap: 12px; margin: 8px 0 24px; }
+.who-select { min-height: 60px; font-size: 19px; font-weight: 700; }
 .add-member { display: flex; flex-direction: column; gap: 6px; }
 .field-label { display: block; font-size: 13px; font-weight: 700; color: var(--muted); margin-bottom: 6px; text-transform: uppercase; letter-spacing: .04em; }
 

@@ -123,20 +123,25 @@ export function renderWho(root: HTMLElement, app: App, go: (hash: string) => voi
       await app.chooseMember(id);
       go('#/');
     };
+    const sorted = [...members].sort((x, y) => x.name.localeCompare(y.name, 'es'));
+    const select = h(
+      'select',
+      { class: 'who-select', 'data-testid': 'who-select', 'aria-label': 'Tu nombre' },
+      h('option', { value: '', text: 'Elige tu nombre…' }),
+      sorted.map((m) => h('option', { value: m.id, text: m.name })),
+    );
+    select.value = app.me && sorted.some((m) => m.id === app.me) ? app.me : '';
+    const enter = h('button', { class: 'btn primary big', type: 'submit', 'data-testid': 'who-enter' }, 'Entrar');
+    enter.disabled = select.value === '';
+    select.addEventListener('change', () => { enter.disabled = select.value === ''; });
+    const choose = (ev: Event) => {
+      ev.preventDefault();
+      if (select.value) void app.chooseMember(select.value).then(() => go('#/'));
+    };
     setChildren(root,
-      h('header', { class: 'topbar' }, h('div', { class: 'eyebrow', text: 'Vortex Wake' }), h('h1', { text: '¿Quién eres?' }), h('p', { class: 'muted', text: 'Toca tu nombre. Así queda tu asistencia de hoy y este teléfono te recuerda.' })),
+      h('header', { class: 'topbar' }, h('div', { class: 'eyebrow', text: 'Vortex Wake' }), h('h1', { text: '¿Quién eres?' }), h('p', { class: 'muted', text: 'Elige tu nombre. Así queda tu asistencia de hoy y este teléfono te recuerda.' })),
       app.team
-        ? h(
-            'div',
-            { class: 'who' },
-            members.map((m) =>
-              h(
-                'button',
-                { class: `who-btn ${app.me === m.id ? 'on' : ''}`, type: 'button', 'data-member': m.id, onclick: () => void app.chooseMember(m.id).then(() => go('#/')) },
-                m.name,
-              ),
-            ),
-          )
+        ? h('form', { class: 'who', onsubmit: choose }, select, enter)
         : h('p', { class: 'muted', text: app.sync.online === false ? (app.hosted ? 'No hay conexión. Revisa la señal o el wifi del teléfono.' : 'No se pudo conectar con la laptop del taller. Revisa que estés en la misma red wifi.') : 'Cargando el equipo…' }),
       app.team
         ? h(
