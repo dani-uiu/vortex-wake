@@ -1,0 +1,249 @@
+{
+  "$comment": "Mapa de campos de la plantilla de la bitácora. Relaciona cada campo del documento (packages/shared/src/notebook.ts) con el nombre de la forma en la diapositiva modelo. Las diapositivas modelo se encuentran por sección (según los separadores) y por huella: el conjunto exacto de nombres de formas y el número de columnas de cada tabla. Si se edita la plantilla, correr `npm test`: la prueba template-map.test.ts dice qué ya no coincide.",
+  "version": 1,
+  "sectionOrder": ["organization", "mechanics", "coding", "wiring", "strategy", "reference"],
+  "contentBottomPt": 728,
+  "footer": {
+    "project": { "type": "title" },
+    "name": { "type": "subTitle", "idx": 1 },
+    "date": { "type": "subTitle", "idx": 2 },
+    "page": { "type": "subTitle", "idx": 3 }
+  },
+  "standard": {
+    "label": "TextBox 5",
+    "title": "TextBox 6",
+    "remove": ["Rectangle 7"],
+    "keep": ["Title 1", "Subtitle 2", "Subtitle 3", "Subtitle 4"],
+    "areaFontSizePt": 10,
+    "areaColor": "1A1A1A",
+    "cellFontSizePt": 9,
+    "cellColor": "1A1A1A"
+  },
+  "pageTypes": {
+    "seasonSummary": {
+      "section": "common",
+      "tables": { "Table 11": 3 },
+      "fields": {
+        "teamAndGoals": { "heading": "TextBox 8", "shape": "Rectangle 9" },
+        "highlights": { "heading": "TextBox 10", "shape": "Table 11" },
+        "biggestChanges": { "heading": "TextBox 12", "shape": "Rectangle 13" },
+        "lessons": { "heading": "TextBox 14", "shape": "Rectangle 15" }
+      }
+    },
+    "codeSummary": {
+      "section": "common",
+      "tables": { "Table 11": 3, "Table 13": 3 },
+      "fields": {
+        "overview": { "heading": "TextBox 8", "shape": "Rectangle 9" },
+        "programs": { "heading": "TextBox 10", "shape": "Table 11" },
+        "sensors": { "heading": "TextBox 12", "shape": "Table 13" },
+        "algorithms": { "heading": "TextBox 14", "shape": "Rectangle 15" },
+        "details": { "heading": "TextBox 16", "shape": "Rectangle 17" }
+      }
+    },
+    "creditSummary": {
+      "section": "common",
+      "tables": { "Table 10": 4 },
+      "clear": ["TextBox 8"],
+      "keep": ["TextBox 9"],
+      "fields": {
+        "credits": { "shape": "Table 10" }
+      }
+    },
+    "teamMembers": {
+      "section": "organization",
+      "tables": { "Table 9": 4 },
+      "fields": {
+        "members": { "heading": "TextBox 8", "shape": "Table 9" },
+        "howWeWork": { "heading": "TextBox 10", "shape": "Rectangle 11" },
+        "mentors": { "heading": "TextBox 12", "shape": "Rectangle 13" },
+        "teamPhoto": { "heading": "TextBox 14", "shape": "Rectangle 15" }
+      }
+    },
+    "seasonTimeline": {
+      "section": "organization",
+      "tables": { "Table 9": 4 },
+      "keep": ["TextBox 8"],
+      "fields": {
+        "timeline": { "shape": "Table 9" }
+      }
+    },
+    "problem": {
+      "section": "any",
+      "tables": { "Table 13": 3, "Table 15": 3 },
+      "fields": {
+        "challenge": { "heading": "TextBox 8", "shape": "Rectangle 9" },
+        "problem": { "heading": "TextBox 10", "shape": "Rectangle 11" },
+        "criteria": { "heading": "TextBox 12", "shape": "Table 13" },
+        "constraints": { "heading": "TextBox 14", "shape": "Table 15" },
+        "nextStep": { "heading": "TextBox 16", "shape": "Rectangle 17" }
+      }
+    },
+    "brainstorm": {
+      "section": "any",
+      "tables": { "Table 13": 4, "Table 15": 5 },
+      "fields": {
+        "context": { "heading": "TextBox 8", "shape": "Rectangle 9" },
+        "sketches": { "heading": "TextBox 10", "shape": "Rectangle 11" },
+        "ideas": { "heading": "TextBox 12", "shape": "Table 13" },
+        "matrix": { "heading": "TextBox 14", "shape": "Table 15" },
+        "chosen": { "heading": "TextBox 16", "shape": "Rectangle 17" }
+      }
+    },
+    "buildIteration": {
+      "section": "any",
+      "tables": {},
+      "fields": {
+        "origin": { "heading": "TextBox 8", "shape": "Rectangle 9" },
+        "changes": { "heading": "TextBox 10", "shape": "Rectangle 11" },
+        "photos": { "heading": "TextBox 12", "shape": "Rectangle 13" },
+        "testResults": { "heading": "TextBox 14", "shape": "Rectangle 15" },
+        "nextSteps": { "heading": "TextBox 16", "shape": "Rectangle 17" }
+      }
+    },
+    "test": {
+      "section": "any",
+      "tables": { "Table 11": 2, "Table 13": 4 },
+      "fields": {
+        "hypothesis": { "heading": "TextBox 8", "shape": "Rectangle 9" },
+        "setup": { "heading": "TextBox 10", "shape": "Table 11" },
+        "results": { "heading": "TextBox 12", "shape": "Table 13" },
+        "analysis": { "heading": "TextBox 14", "shape": "Rectangle 15" },
+        "conclusion": { "heading": "TextBox 16", "shape": "Rectangle 17" }
+      }
+    },
+    "decision": {
+      "section": "any",
+      "tables": { "Table 11": 4 },
+      "fields": {
+        "decision": { "heading": "TextBox 8", "shape": "Rectangle 9" },
+        "options": { "heading": "TextBox 10", "shape": "Table 11" },
+        "evidence": { "heading": "TextBox 12", "shape": "Rectangle 13" },
+        "process": { "heading": "TextBox 14", "shape": "Rectangle 15" },
+        "expectations": { "heading": "TextBox 16", "shape": "Rectangle 17" }
+      }
+    },
+    "mechanism": {
+      "section": "any",
+      "tables": { "Table 13": 3 },
+      "fields": {
+        "purpose": { "heading": "TextBox 8", "shape": "Rectangle 9" },
+        "picture": { "heading": "TextBox 10", "shape": "Rectangle 11" },
+        "labels": { "heading": "TextBox 12", "shape": "Table 13" },
+        "howItWorks": { "heading": "TextBox 14", "shape": "Rectangle 15" }
+      }
+    },
+    "codeDoc": {
+      "section": "any",
+      "tables": {},
+      "fields": {
+        "purpose": { "heading": "TextBox 8", "shape": "Rectangle 9" },
+        "rationale": { "heading": "TextBox 10", "shape": "Rectangle 11" },
+        "pseudocode": { "heading": "TextBox 12", "shape": "Rectangle 13" },
+        "debugging": { "heading": "TextBox 14", "shape": "Rectangle 15" },
+        "relatedTests": { "heading": "TextBox 16", "shape": "Rectangle 17" }
+      }
+    },
+    "wiringDoc": {
+      "section": "any",
+      "tables": { "Table 13": 4 },
+      "fields": {
+        "diagram": { "heading": "TextBox 8", "shape": "Rectangle 9" },
+        "ports": { "heading": "TextBox 10", "shape": "Table 13" },
+        "problems": { "heading": "TextBox 12", "shape": "Rectangle 15" }
+      }
+    },
+    "changeLog": {
+      "section": "any",
+      "tables": { "Table 9": 4 },
+      "keep": ["TextBox 8"],
+      "fields": {
+        "changes": { "shape": "Table 9" }
+      }
+    },
+    "reflection": {
+      "section": "any",
+      "tables": { "Table 19": 3 },
+      "fields": {
+        "period": { "heading": "TextBox 8", "shape": "Rectangle 9" },
+        "worked": { "heading": "TextBox 10", "shape": "Rectangle 11" },
+        "didNotWork": { "heading": "TextBox 12", "shape": "Rectangle 13" },
+        "learned": { "heading": "TextBox 14", "shape": "Rectangle 15" },
+        "planChanges": { "heading": "TextBox 16", "shape": "Rectangle 17" },
+        "tracker": { "heading": "TextBox 18", "shape": "Table 19" }
+      }
+    },
+    "gameAnalysis": {
+      "section": "any",
+      "tables": { "Table 9": 5, "Table 11": 3 },
+      "fields": {
+        "priorities": { "heading": "TextBox 8", "shape": "Table 9" },
+        "matchPlan": { "heading": "TextBox 10", "shape": "Table 11" },
+        "strategy": { "heading": "TextBox 12", "shape": "Rectangle 13" },
+        "participants": { "heading": "TextBox 14", "shape": "Rectangle 15" }
+      }
+    },
+    "autonomousPlan": {
+      "section": "any",
+      "tables": { "Table 13": 4 },
+      "fields": {
+        "path": { "heading": "TextBox 8", "shape": "Rectangle 9" },
+        "steps": { "heading": "TextBox 10", "shape": "Table 13" },
+        "rationale": { "heading": "TextBox 12", "shape": "Rectangle 15" },
+        "testResults": { "heading": "TextBox 14", "shape": "Rectangle 11" }
+      }
+    }
+  },
+  "fixedPages": {
+    "cover": {
+      "section": "common",
+      "shapes": ["Google Shape;164;p23", "Google Shape;165;p23", "Google Shape;166;p23", "Google Shape;167;p23", "Google Shape;168;p23", "Google Shape;169;p23", "Google Shape;170;p23", "Google Shape;171;p23", "Google Shape;172;p23", "Google Shape;173;p23"],
+      "remove": ["Google Shape;172;p23"],
+      "text": {
+        "teamNumber": "Google Shape;167;p23",
+        "teamName": "Google Shape;164;p23",
+        "school": "Google Shape;168;p23",
+        "startDate": "Google Shape;171;p23",
+        "endDate": "Google Shape;170;p23",
+        "book": "Google Shape;165;p23",
+        "books": "Google Shape;166;p23"
+      }
+    },
+    "coverPhoto": {
+      "section": "common",
+      "shapes": ["Google Shape;178;p24", "Google Shape;179;p24", "Google Shape;180;p24", "Google Shape;181;p24", "Google Shape;182;p24", "Google Shape;183;p24", "Google Shape;184;p24", "Google Shape;185;p24", "Google Shape;186;p24"],
+      "remove": [],
+      "photo": "Google Shape;185;p24",
+      "text": {
+        "teamNumber": "Google Shape;181;p24",
+        "teamName": "Google Shape;178;p24",
+        "school": "Google Shape;182;p24",
+        "startDate": "Google Shape;184;p24",
+        "endDate": "Google Shape;183;p24",
+        "book": "Google Shape;179;p24",
+        "books": "Google Shape;180;p24"
+      }
+    },
+    "resources": {
+      "section": "common",
+      "shapes": ["Google Shape;219;p27", "Google Shape;220;p27", "Google Shape;221;p27", "Google Shape;222;p27", "Google Shape;223;p27", "Google Shape;224;p27"],
+      "remove": [],
+      "text": {}
+    },
+    "tableOfContents": {
+      "section": "common",
+      "shapes": ["Google Shape;229;p28"],
+      "remove": [],
+      "text": {},
+      "toc": {
+        "shape": "Google Shape;229;p28",
+        "firstLineTopPt": 51.2,
+        "lineSpacingPt": 18.03,
+        "linesPerPage": 39,
+        "fontSizePt": 11,
+        "titleTabPt": 67.75,
+        "dateTabPt": 468
+      }
+    }
+  }
+}

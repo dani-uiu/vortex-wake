@@ -1,0 +1,667 @@
+{
+  "$comment": "EJEMPLO FICTICIO. Equipo, personas, escuela y datos inventados para probar el generador. Las imágenes de fotos/ son dibujos de relleno generados para este ejemplo.",
+  "format": "vortex-wake/notebook",
+  "version": 1,
+  "language": "es",
+  "project": "EJEMPLO · Equipo 99999Z · Temporada 2026-2027",
+  "team": { "number": "99999Z", "name": "Equipo de Ejemplo (ficticio)", "school": "Escuela Ficticia del Norte" },
+  "season": { "start": "2026-09-01", "end": "2027-04-30", "book": 1, "books": 1 },
+  "cover": { "photo": { "src": "fotos/equipo.jpg" } },
+  "members": [
+    { "id": "ximena", "name": "Ximena Robles", "roles": ["Capitana", "Constructora"], "grade": "3.º de prepa, 3 años", "initials": "XR" },
+    { "id": "diego", "name": "Diego Arreola", "roles": ["Programador"], "grade": "2.º de prepa, 2 años", "initials": "DA" },
+    { "id": "mariana", "name": "Mariana Fuentes", "roles": ["Constructora", "Cableado"], "grade": "2.º de prepa, 1 año", "initials": "MF" },
+    { "id": "tomas", "name": "Tomás Villarreal", "roles": ["Piloto", "Estrategia"], "grade": "3.º de prepa, 2 años", "initials": "TV" },
+    { "id": "renata", "name": "Renata Ochoa", "roles": ["Programadora", "Scouting"], "grade": "1.º de prepa, primer año", "initials": "RO" },
+    { "id": "emilio", "name": "Emilio Garza", "roles": ["Constructor", "Diseño CAD"], "grade": "1.º de prepa, primer año", "initials": "EG" },
+    { "id": "paula", "name": "Paula Medina", "roles": ["Bitácora"], "grade": "Mentora", "initials": "PM" }
+  ],
+  "editors": ["paula"],
+  "sessions": [
+    { "date": "2026-09-04", "event": "Taller", "summary": "Análisis del juego y prioridades de anotación." },
+    { "date": "2026-09-05", "event": "Taller", "summary": "Definimos el problema del robot y sus restricciones." },
+    { "date": "2026-09-06", "event": "Taller", "summary": "Problema de programación: autónomo y control." },
+    { "date": "2026-09-08", "event": "Taller", "summary": "Lluvia de ideas del intake; tres bocetos." },
+    { "date": "2026-09-10", "event": "Taller", "summary": "Decidimos el intake de rodillos con la matriz." },
+    { "date": "2026-09-12", "event": "Taller", "summary": "Primer prototipo del intake." },
+    { "date": "2026-09-15", "event": "Taller", "summary": "Prueba de agarre del intake v1 (16 intentos)." },
+    { "date": "2026-09-18", "event": "Taller", "summary": "Cableado del chasis y mapa de puertos." },
+    { "date": "2026-09-19", "event": "Taller", "summary": "Intake v2 con rodillos más separados." },
+    { "date": "2026-09-20", "event": "Taller", "summary": "Primer código del intake con sensor." },
+    { "date": "2026-09-22", "event": "Taller", "summary": "Prueba del intake v2." },
+    { "date": "2026-09-26", "event": "Taller", "summary": "Intake v3 con guía impresa en 3D." },
+    { "date": "2026-10-01", "event": "Taller", "summary": "Prueba del autónomo izquierdo." },
+    { "date": "2026-10-03", "event": "Taller", "summary": "Intake v4 y ajuste de compresión." },
+    { "date": "2026-10-05", "event": "Taller", "summary": "Control PID del chasis." },
+    { "date": "2026-10-08", "event": "Taller", "summary": "Plan del autónomo de 15 segundos." },
+    { "date": "2026-10-10", "event": "Torneo de práctica", "summary": "Primer torneo de práctica: 4 partidos, 3 ganados." },
+    { "date": "2026-10-12", "event": "Taller", "summary": "Reflexiones de cada sección después del torneo." }
+  ],
+  "pages": [
+    {
+      "id": "season-summary",
+      "type": "seasonSummary",
+      "date": "2026-10-13",
+      "authors": ["ximena", "paula"],
+      "fields": {
+        "teamAndGoals": "Somos un equipo de ejemplo de siete integrantes. Esta temporada queremos llegar al campeonato estatal con un robot sencillo y confiable, y documentar cada decisión con datos de prueba.",
+        "highlights": [
+          ["04/09/2026", "Análisis del juego y prioridades", "{{page:s-game}}"],
+          ["10/09/2026", "Elegimos el intake de rodillos", "{{page:m-decision-intake}}"],
+          ["26/09/2026", "Intake v3 con guía impresa", "{{page:m-build-intake-3}}"],
+          ["05/10/2026", "Control PID del chasis", "{{page:c-code-pid}}"],
+          ["10/10/2026", "Torneo de práctica: 3 de 4 partidos ganados", "{{page:s-reflection}}"]
+        ],
+        "biggestChanges": "El intake pasó por cuatro versiones (de {{page:m-build-intake-1}} a {{page:m-build-intake-4}}): cada una corrigió un problema medido en la prueba anterior. En código, cambiamos el control de tiempo por un PID con sensor de rotación ({{page:c-code-pid}}).",
+        "lessons": "Probar con el mismo procedimiento cada vez nos dejó comparar versiones. Anotar el mismo día evitó reconstruir de memoria."
+      }
+    },
+    {
+      "id": "code-summary",
+      "type": "codeSummary",
+      "date": "2026-10-13",
+      "authors": ["diego", "renata"],
+      "fields": {
+        "overview": "En el autónomo el robot sigue una ruta de cinco pasos con odometría. En control manual el piloto maneja con dos palancas y el intake se detiene solo cuando el sensor detecta una pieza.",
+        "programs": [
+          ["intakeControl()", "Enciende y detiene el intake según el sensor de distancia", "{{page:c-code-intake}}"],
+          ["drivePID()", "Avanza una distancia exacta con PID", "{{page:c-code-pid}}"],
+          ["autonIzquierdo()", "Rutina de 15 s del lado izquierdo", "{{page:s-auton}}"]
+        ],
+        "sensors": [
+          ["Distancia (puerto 7)", "Distancia a la pieza, en mm", "Detiene el intake cuando una pieza entra"],
+          ["Rotación (puerto 8)", "Giro de la rueda libre, en grados", "Calcula cuánto avanzó el robot"],
+          ["Inercial (puerto 9)", "Rumbo del robot, en grados", "Corrige giros en el autónomo"]
+        ],
+        "algorithms": "PID para avanzar y girar; una máquina de estados sencilla para el intake (esperando, tomando, lleno).",
+        "details": "{{page:c-code-intake}}, {{page:c-code-pid}}, {{page:c-test-auton}}"
+      }
+    },
+    {
+      "id": "team",
+      "type": "teamMembers",
+      "date": "2026-09-02",
+      "authors": ["ximena"],
+      "fields": {
+        "howWeWork": "Nos reunimos martes, jueves y sábado. Cada sesión empieza con los pendientes de la anterior y termina con un cierre de tres preguntas. Las decisiones importantes se toman con matriz de decisión y votación.",
+        "mentors": "Paula Medina (mentora ficticia): revisa la bitácora cada semana y nos enseña a planear pruebas.",
+        "teamPhoto": { "images": [{ "src": "fotos/equipo.jpg", "caption": "Equipo de ejemplo (siluetas)" }] }
+      }
+    },
+    {
+      "id": "s-game",
+      "type": "gameAnalysis",
+      "section": "strategy",
+      "date": "2026-09-04",
+      "authors": ["tomas", "renata"],
+      "subsystem": "temporada 2026-2027",
+      "fields": {
+        "priorities": [
+          ["1", "Piezas en metas", "5 c/u", "Es lo que más puntos da y lo podemos hacer desde el inicio", "Necesita un intake muy confiable"],
+          ["2", "Bonificación de autónomo", "12", "Un autónomo sencillo ya gana muchos partidos", "Tiempo de programación"],
+          ["3", "Estacionarse al final", "8", "Fácil si el chasis es estable", "Dejamos de anotar los últimos segundos"],
+          ["4", "Bloquear al rival", "—", "Solo si vamos ganando", "Riesgo de faltas"]
+        ],
+        "matchPlan": [
+          ["Ruta de 5 pasos, 2 piezas", "12 + 10"],
+          ["Ciclos de recoger y anotar", "40"],
+          ["Estacionarse a los 10 s", "8"]
+        ],
+        "strategy": "Robot de anotación rápida con intake de rodillos. Priorizamos la confiabilidad del intake sobre la velocidad: un intake que falla cuesta más puntos que uno lento.",
+        "participants": "Tomás (prioridades y plan de partido), Renata (datos de scouting), Ximena (viabilidad mecánica)."
+      }
+    },
+    {
+      "id": "m-problem",
+      "type": "problem",
+      "section": "mechanics",
+      "date": "2026-09-05",
+      "authors": ["ximena", "emilio"],
+      "subsystem": "robot completo",
+      "fields": {
+        "challenge": "El robot debe recoger piezas del suelo, llevarlas a las metas y estacionarse al final del partido, sin salirse de las medidas de inicio.",
+        "problem": "Necesitamos un robot que recoja una pieza a la vez sin atorarse y la deje en la meta en menos de 4 segundos, porque los puntos de piezas en metas son la mayor parte del marcador.",
+        "criteria": [
+          ["Recoge piezas sin atorarse", "Intentos exitosos de 20", "18 de 20"],
+          ["Tiempo de ciclo corto", "Cronómetro, recoger y anotar", "Menos de 4 s"],
+          ["Robot estable al girar", "Vueltas a velocidad máxima sin volcar", "10 de 10"],
+          ["Fácil de reparar", "Minutos para cambiar un rodillo", "Menos de 5 min"]
+        ],
+        "constraints": [
+          ["Medidas de inicio 18\" x 18\" x 18\"", "Reglamento", "El intake debe plegarse"],
+          ["Motores disponibles: 8", "Inventario del taller", "4 para chasis, 2 para intake, 2 libres"],
+          ["Dos sesiones por semana", "Horario del equipo", "Prototipos rápidos, sin piezas complejas"],
+          ["Presupuesto limitado", "Escuela", "Reusar piezas de la temporada pasada"]
+        ],
+        "nextStep": "Lluvia de ideas del intake ({{page:m-brainstorm-intake}})."
+      }
+    },
+    {
+      "id": "c-problem",
+      "type": "problem",
+      "section": "coding",
+      "date": "2026-09-06",
+      "authors": ["diego", "renata"],
+      "subsystem": "autónomo y control manual",
+      "fields": {
+        "challenge": "Los primeros 15 segundos son autónomos: el robot actúa solo con su código y sus sensores. Después el piloto controla el robot por 1:45.",
+        "problem": "Necesitamos un autónomo que anote al menos dos piezas siempre igual, y un control manual que no obligue al piloto a vigilar el intake.",
+        "criteria": [
+          ["Autónomo repetible", "Piezas anotadas en 10 corridas", "2 piezas en 9 de 10"],
+          ["Intake automático", "Piezas detenidas a tiempo", "Sin piezas dobles"],
+          ["Control cómodo", "Opinión del piloto (1 a 5)", "4 o más"]
+        ],
+        "constraints": [
+          ["Sin control del piloto en autónomo", "Reglamento", "Todo depende de sensores"],
+          ["Sensores disponibles", "Inventario", "Distancia, rotación e inercial"],
+          ["Un solo programador con experiencia", "Equipo", "Código sencillo y comentado"]
+        ],
+        "nextStep": "Lluvia de ideas de control del intake ({{page:c-brainstorm}})."
+      }
+    },
+    {
+      "id": "s-brainstorm",
+      "type": "brainstorm",
+      "section": "strategy",
+      "date": "2026-09-07",
+      "authors": ["tomas", "renata", "ximena"],
+      "subsystem": "estrategia de partido",
+      "fields": {
+        "context": "Cómo repartir el tiempo del partido. Participaron Tomás, Renata y Ximena.",
+        "sketches": "Dibujamos tres planes de partido en el pizarrón (no hay fotos de esta sesión).",
+        "ideas": [
+          ["A. Solo anotar", "Ciclos continuos de recoger y anotar", "Más puntos si el intake es confiable", "Ignora el final del partido"],
+          ["B. Anotar y estacionar", "Ciclos y estacionarse a los 10 s", "Puntos seguros al final", "Menos ciclos"],
+          ["C. Defensa", "Bloquear las metas del rival", "Útil contra robots rápidos", "Riesgo de faltas, pocos puntos propios"]
+        ],
+        "matrix": [
+          ["Puntos esperados (x3)", "3", "4", "4", "2"],
+          ["Riesgo (x2)", "2", "3", "4", "2"],
+          ["Facilidad para el piloto (x1)", "1", "4", "4", "3"]
+        ],
+        "chosen": "Plan B: anotar y estacionarse. Da casi los mismos puntos que A con menos riesgo."
+      }
+    },
+    {
+      "id": "m-brainstorm-intake",
+      "type": "brainstorm",
+      "section": "mechanics",
+      "date": "2026-09-08",
+      "authors": ["ximena", "emilio", "mariana"],
+      "subsystem": "intake",
+      "fields": {
+        "context": "Cómo recoger una pieza del suelo. Participaron Ximena, Emilio y Mariana.",
+        "sketches": {
+          "images": [
+            { "src": "fotos/boceto-a.png", "caption": "A. Rodillos" },
+            { "src": "fotos/boceto-b.png", "caption": "B. Garra" },
+            { "src": "fotos/boceto-c.png", "caption": "C. Pala" }
+          ]
+        },
+        "ideas": [
+          ["A. Rodillos", "Dos rodillos con ligas jalan la pieza hacia adentro", "Rápido, no hay que apuntar", "Puede jalar dos piezas"],
+          ["B. Garra", "Dos brazos cierran sobre la pieza", "Agarre firme", "Lento, hay que apuntar"],
+          ["C. Pala", "Una pala levanta la pieza", "Muy simple", "La pieza se cae al girar"]
+        ],
+        "matrix": [
+          ["Velocidad", "3", "5", "2", "4"],
+          ["Confiabilidad", "4", "4", "4", "2"],
+          ["Facilidad de construir", "2", "4", "2", "5"]
+        ],
+        "chosen": "Idea A (rodillos): mejor puntaje total. Ver la decisión en {{page:m-decision-intake}}."
+      }
+    },
+    {
+      "id": "c-brainstorm",
+      "type": "brainstorm",
+      "section": "coding",
+      "date": "2026-09-09",
+      "authors": ["diego", "renata"],
+      "subsystem": "control del intake",
+      "fields": {
+        "context": "Cómo saber cuándo detener el intake. Participaron Diego y Renata.",
+        "sketches": { "images": [{ "src": "fotos/codigo.png", "caption": "Primer esbozo del código" }] },
+        "ideas": [
+          ["A. Por tiempo", "Girar 1.5 s y detener", "Muy simple", "Falla si la pieza tarda"],
+          ["B. Sensor de distancia", "Detener cuando la pieza está cerca", "Se adapta a cada pieza", "Hay que calibrar"],
+          ["C. Corriente del motor", "Detener cuando el motor se esfuerza", "Sin sensor extra", "Ruido en la lectura"]
+        ],
+        "matrix": [
+          ["Confiabilidad", "5", "2", "5", "3"],
+          ["Facilidad", "3", "5", "4", "2"],
+          ["Sensores disponibles", "2", "5", "4", "5"]
+        ],
+        "chosen": "Idea B, con el sensor de distancia del puerto 7."
+      }
+    },
+    {
+      "id": "m-decision-intake",
+      "type": "decision",
+      "section": "mechanics",
+      "date": "2026-09-10",
+      "authors": ["ximena", "emilio", "mariana", "tomas"],
+      "subsystem": "intake",
+      "fields": {
+        "decision": "Construir un intake de dos rodillos con ligas al frente del robot.",
+        "options": [
+          ["Rodillos", "Rápido; no hay que apuntar", "Puede jalar dos piezas", "Matriz: 31 puntos ({{page:m-brainstorm-intake}})"],
+          ["Garra", "Agarre firme", "Lenta; el piloto debe apuntar", "Matriz: 26 puntos"],
+          ["Pala", "Muy simple", "La pieza se cae al girar", "Matriz: 24 puntos"]
+        ],
+        "evidence": "La matriz de decisión dio 31 puntos a los rodillos contra 26 y 24. En una prueba rápida con cartón, los rodillos tomaron 9 de 10 piezas.",
+        "process": "Matriz de decisión y votación (4 a 0). Participaron Ximena, Emilio, Mariana y Tomás.",
+        "expectations": "Esperamos 18 de 20 piezas tomadas en la primera prueba formal ({{page:m-test-intake-1}})."
+      }
+    },
+    {
+      "id": "m-build-intake-1",
+      "type": "buildIteration",
+      "section": "mechanics",
+      "date": "2026-09-12",
+      "authors": ["ximena", "emilio"],
+      "subsystem": "intake",
+      "thread": "intake",
+      "fields": {
+        "origin": "Primera versión, a partir de la decisión {{page:m-decision-intake}}.",
+        "changes": "Dos rodillos de 2\" con ligas, separados 5\". Un motor de 200 rpm con transmisión 1:1.",
+        "photos": { "images": [{ "src": "fotos/intake-v1.jpg", "caption": "Intake v1 montado en el chasis" }] },
+        "testResults": "En la prueba {{page:m-test-intake-1}} tomó 13 de 16 piezas; las piezas inclinadas se atoran.",
+        "nextSteps": "Separar más los rodillos y agregar una guía."
+      },
+      "changes": [
+        { "change": "Intake de dos rodillos (v1)", "test": "m-decision-intake", "evidence": "matriz de decisión", "result": "13 de 16 piezas" }
+      ]
+    },
+    {
+      "id": "m-test-intake-1",
+      "type": "test",
+      "section": "mechanics",
+      "date": "2026-09-15",
+      "authors": ["mariana", "tomas"],
+      "subsystem": "intake v1",
+      "fields": {
+        "hypothesis": "El intake v1 toma al menos 18 de 20 piezas desde cualquier ángulo.",
+        "setup": [["Piezas tomadas, de 16 intentos"], ["Conteo a mano, video a 60 fps"], ["Batería al 100 %, piso de foam, código v0.2"], ["16"], ["15/09/2026, Mariana y Tomás"]],
+        "results": [
+          ["1", "Tomada, 1.2 s", "Entra derecho", "v1 / 0.2"],
+          ["2", "Tomada, 1.3 s", "", "v1 / 0.2"],
+          ["3", "Fallo", "Pieza inclinada 30°, se atora en el rodillo de abajo", "v1 / 0.2"],
+          ["4", "Tomada, 1.1 s", "", "v1 / 0.2"],
+          ["5", "Tomada, 1.4 s", "", "v1 / 0.2"],
+          ["6", "Tomada, 1.2 s", "", "v1 / 0.2"],
+          ["7", "Fallo", "Pieza inclinada, rebota", "v1 / 0.2"],
+          ["8", "Tomada, 1.2 s", "", "v1 / 0.2"],
+          ["9", "Tomada, 1.5 s", "Entra de lado", "v1 / 0.2"],
+          ["10", "Tomada, 1.2 s", "", "v1 / 0.2"],
+          ["11", "Tomada, 1.3 s", "", "v1 / 0.2"],
+          ["12", "Fallo", "Dos piezas juntas, se atoran", "v1 / 0.2"],
+          ["13", "Tomada, 1.1 s", "", "v1 / 0.2"],
+          ["14", "Tomada, 1.2 s", "", "v1 / 0.2"],
+          ["15", "Tomada, 1.3 s", "", "v1 / 0.2"],
+          ["16", "Tomada, 1.2 s", "", "v1 / 0.2"]
+        ],
+        "analysis": { "text": "13 de 16 (81 %). Tiempo promedio de las exitosas: 1.25 s (rango 1.1 a 1.5 s). Las tres fallas fueron piezas inclinadas o dobles.", "images": [{ "src": "fotos/grafica-pruebas.png" }] },
+        "conclusion": "No llegamos a la meta de 90 %. Hay que guiar las piezas inclinadas: lo intentamos en {{page:m-build-intake-2}}."
+      }
+    },
+    {
+      "id": "w-wiring",
+      "type": "wiringDoc",
+      "section": "wiring",
+      "date": "2026-09-18",
+      "authors": ["mariana"],
+      "subsystem": "chasis e intake",
+      "fields": {
+        "diagram": { "images": [{ "src": "fotos/cableado.png", "caption": "Diagrama de puertos del Brain" }] },
+        "ports": [
+          ["1", "Motor chasis izq. adelante", "Cable de 12\"", "Cerca del motor, ruta corta"],
+          ["2", "Motor chasis izq. atrás", "Cable de 18\"", "Por dentro del canal"],
+          ["3", "Motor chasis izq. medio", "Cable de 12\"", ""],
+          ["4", "Motor chasis der. adelante", "Cable de 12\"", "Simétrico al lado izquierdo"],
+          ["5", "Motor chasis der. atrás", "Cable de 18\"", "Por dentro del canal"],
+          ["6", "Motor chasis der. medio", "Cable de 12\"", ""],
+          ["7", "Sensor de distancia", "Cable de 24\"", "Al frente del intake"],
+          ["8", "Sensor de rotación", "Cable de 18\"", "Rueda libre trasera"],
+          ["9", "Sensor inercial", "Cable de 12\"", "Centro del robot, lejos de motores"],
+          ["10", "Motor intake", "Cable de 24\"", "Sube por la torre"],
+          ["11", "Motor intake 2", "Cable de 24\"", "Agregado en v4"],
+          ["12", "Libre", "", "Reserva"],
+          ["21", "Radio", "Cable de 12\"", "Arriba, sin metal alrededor"],
+          ["Batería", "Batería V5", "Cable de batería", "Sujeta con velcro"]
+        ],
+        "problems": "El cable del puerto 7 se soltaba al chocar: lo sujetamos con cinchos cada 5 cm. El puerto 3 dejó de funcionar y pasamos el motor al 12 (después regresamos al 3 tras cambiar el Brain)."
+      },
+      "changes": [
+        { "change": "Cinchos cada 5 cm en el cable del sensor", "evidence": "el sensor se desconectó 2 veces en prácticas", "result": "Sin desconexiones en el torneo" }
+      ]
+    },
+    {
+      "id": "m-build-intake-2",
+      "type": "buildIteration",
+      "section": "mechanics",
+      "date": "2026-09-19",
+      "authors": ["emilio", "ximena"],
+      "subsystem": "intake",
+      "thread": "intake",
+      "fields": {
+        "origin": "Continúa la iteración #1 ({{page:m-build-intake-1}}): las piezas inclinadas se atoraban en el rodillo de abajo ({{page:m-test-intake-1}}).",
+        "changes": "Separamos los rodillos de 5\" a 5.5\" para que las piezas inclinadas entren. Cambiamos las ligas por unas más gruesas.",
+        "photos": { "images": [{ "src": "fotos/intake-v2.jpg", "caption": "Intake v2" }] },
+        "testResults": "En {{page:m-test-intake-2}} tomó 17 de 20; ahora a veces entran dos piezas juntas.",
+        "nextSteps": "Agregar una guía que solo deje pasar una pieza."
+      },
+      "changes": [
+        { "change": "Rodillos de 5\" a 5.5\"; ligas más gruesas", "test": "m-test-intake-1", "evidence": "13 de 16, fallas por piezas inclinadas", "result": "17 de 20 ({{page:m-test-intake-2}})" }
+      ],
+      "credits": [
+        { "source": "Video ficticio \"Intakes de rodillos\", canal de ejemplo", "used": "Idea de usar ligas gruesas", "changes": "Ajustamos la separación a nuestra pieza" }
+      ]
+    },
+    {
+      "id": "c-code-intake",
+      "type": "codeDoc",
+      "section": "coding",
+      "date": "2026-09-20",
+      "authors": ["diego"],
+      "subsystem": "control del intake",
+      "fields": {
+        "purpose": "Que el intake gire mientras no hay pieza y se detenga solo cuando una pieza entra, para que el piloto no tenga que vigilarlo.",
+        "rationale": "Elegimos el sensor de distancia ({{page:c-brainstorm}}). El control por tiempo fallaba con piezas lentas.",
+        "pseudocode": {
+          "code": true,
+          "text": "mientras el partido sigue:\n  si el piloto presiona R1:\n    si sensor.distancia() < 40 mm:\n      intake.detener(mantener)   // ya hay pieza\n    si no:\n      intake.girar(adelante, 80 %)\n  si el piloto presiona R2:\n    intake.girar(atrás, 100 %)    // soltar pieza\n  esperar(10 ms)"
+        },
+        "debugging": "v0.1: el intake se detenía con la pieza a medio entrar; subimos el umbral de 30 a 40 mm. v0.2: lecturas falsas por la luz del gimnasio; promediamos 3 lecturas. Lo escribió Diego y lo revisó Renata.",
+        "relatedTests": "{{page:m-test-intake-2}}"
+      }
+    },
+    {
+      "id": "m-test-intake-2",
+      "type": "test",
+      "section": "mechanics",
+      "date": "2026-09-22",
+      "authors": ["mariana", "tomas"],
+      "subsystem": "intake v2",
+      "fields": {
+        "hypothesis": "Con los rodillos más separados, el intake toma 18 de 20 piezas inclinadas.",
+        "setup": [["Piezas tomadas, de 20 intentos"], ["Conteo a mano"], ["Batería al 100 %, piso de foam, código v0.2"], ["20"], ["22/09/2026, Mariana y Tomás"]],
+        "results": [
+          ["1-5", "5 de 5", "Piezas derechas", "v2 / 0.2"],
+          ["6-10", "5 de 5", "Piezas inclinadas 30°", "v2 / 0.2"],
+          ["11-15", "4 de 5", "Una vez entraron dos piezas", "v2 / 0.2"],
+          ["16-20", "3 de 5", "Dos veces entraron dos piezas", "v2 / 0.2"]
+        ],
+        "analysis": "17 de 20 (85 %). Ya no fallan las inclinadas; el nuevo problema son las piezas dobles.",
+        "conclusion": "Mejoró, pero las piezas dobles son una falta. Siguiente: guía de una sola pieza ({{page:m-build-intake-3}})."
+      }
+    },
+    {
+      "id": "w-decision",
+      "type": "decision",
+      "section": "wiring",
+      "date": "2026-09-25",
+      "authors": ["mariana", "ximena"],
+      "subsystem": "ruta de cables",
+      "fields": {
+        "decision": "Pasar todos los cables por dentro de los canales del chasis, sujetos con cinchos.",
+        "options": [
+          ["Por dentro de los canales", "Protegidos de choques", "Más difícil cambiar un motor", "{{page:w-wiring}}"],
+          ["Por fuera, con espiral", "Fácil de revisar", "Se enganchan con otros robots", "2 desconexiones en práctica"]
+        ],
+        "evidence": "En dos prácticas, los cables por fuera se engancharon con el robot rival y se desconectó el sensor de distancia.",
+        "process": "Consenso entre Mariana y Ximena, revisado con Paula.",
+        "expectations": "Cero desconexiones en el torneo de práctica."
+      }
+    },
+    {
+      "id": "m-build-intake-3",
+      "type": "buildIteration",
+      "section": "mechanics",
+      "date": "2026-09-26",
+      "authors": ["emilio", "ximena", "mariana"],
+      "subsystem": "intake",
+      "thread": "intake",
+      "fields": {
+        "origin": "Continúa la iteración #2 ({{page:m-build-intake-2}}). Ese intake tomaba 17 de 20 piezas, pero a veces entraban dos piezas juntas, y eso es una falta según el reglamento.",
+        "changes": "1. Agregamos una guía impresa en 3D (PLA, 2 h de impresión, 15 % de relleno) que deja una sola entrada del ancho de una pieza. Antes las dos piezas entraban porque la boca del intake medía casi el doble del ancho de una pieza.\n2. Bajamos la velocidad del motor de 200 a 150 rpm con un engrane de 36 a 48 dientes, porque a alta velocidad la segunda pieza alcanzaba a entrar antes de que la primera terminara de subir.\n3. Movimos el sensor de distancia 2 cm hacia adentro para que detecte la pieza cuando ya pasó la guía y no antes; con la posición anterior el intake se detenía con la pieza a medio entrar.\n4. Reforzamos el eje del rodillo de abajo con un buje extra porque se doblaba con los choques del lado izquierdo.\n5. Cambiamos los tornillos de la torre por tornillos con tuerca de seguridad, porque se aflojaban después de tres o cuatro partidos de práctica y el rodillo de arriba se desalineaba.\n6. Agregamos una placa de policarbonato en la parte de arriba para que las piezas no se salgan cuando el robot gira rápido.",
+        "photos": {
+          "images": [
+            { "src": "fotos/intake-v3-frente.jpg", "caption": "Frente: guía impresa" },
+            { "src": "fotos/intake-v3-lado.png", "caption": "Lado: sensor movido" },
+            { "src": "fotos/intake-v3-arriba.jpg", "caption": "Arriba: placa nueva" },
+            { "src": "fotos/intake-v1.jpg", "caption": "Comparación con v1" }
+          ]
+        },
+        "testResults": "En práctica libre tomó 19 de 20 sin piezas dobles. La prueba formal quedó para la siguiente sesión, junto con el ajuste de compresión de la iteración #4 ({{page:m-build-intake-4}}). Notamos que con la velocidad baja el ciclo completo subió de 3.1 s a 3.4 s, que todavía está dentro del criterio de menos de 4 s ({{page:m-problem}}).",
+        "nextSteps": "Medir la compresión de las ligas: sospechamos que con piezas gastadas el agarre baja. Probar dos medidas de liga en la iteración #4."
+      },
+      "changes": [
+        { "change": "Guía impresa en 3D de una sola entrada; motor a 150 rpm", "test": "m-test-intake-2", "evidence": "17 de 20, 3 piezas dobles", "result": "19 de 20 en práctica, sin dobles" }
+      ]
+    },
+    {
+      "id": "c-test-auton",
+      "type": "test",
+      "section": "coding",
+      "date": "2026-10-01",
+      "authors": ["diego", "tomas"],
+      "subsystem": "autónomo izquierdo",
+      "fields": {
+        "hypothesis": "La rutina anota 2 piezas en al menos 9 de 10 corridas.",
+        "setup": [["Piezas anotadas en 15 s"], ["Conteo a mano y cronómetro"], ["Batería al 100 %, campo de práctica, código v0.4"], ["10"], ["01/10/2026, Diego y Tomás"]],
+        "results": [
+          ["1", "2 piezas", "", "0.4"],
+          ["2", "2 piezas", "", "0.4"],
+          ["3", "1 pieza", "Giro corto en el paso 3", "0.4"],
+          ["4", "2 piezas", "", "0.4"],
+          ["5", "2 piezas", "", "0.4"],
+          ["6", "1 pieza", "Giro corto otra vez", "0.4"],
+          ["7", "2 piezas", "", "0.4"],
+          ["8", "2 piezas", "", "0.4"],
+          ["9", "2 piezas", "", "0.4"],
+          ["10", "2 piezas", "", "0.4"]
+        ],
+        "analysis": "8 de 10 corridas con 2 piezas. Las dos fallas fueron giros cortos en el paso 3: el robot giraba por tiempo, no con el sensor inercial.",
+        "conclusion": "Cambiar los giros a control con el sensor inercial; ver {{page:c-decision}}."
+      }
+    },
+    {
+      "id": "c-decision",
+      "type": "decision",
+      "section": "coding",
+      "date": "2026-10-02",
+      "authors": ["diego", "renata"],
+      "subsystem": "giros del autónomo",
+      "fields": {
+        "decision": "Usar PID con el sensor inercial para los giros y con el sensor de rotación para avanzar.",
+        "options": [
+          ["Giros por tiempo", "Ya funciona", "Falla con batería baja", "{{page:c-test-auton}}"],
+          ["PID con sensores", "Repetible", "Hay que ajustar constantes", "Tutorial de PID"],
+          ["Giros por grados del motor", "Sin sensor extra", "Las ruedas patinan", "Prueba rápida: 6 de 10"]
+        ],
+        "evidence": "Con giros por tiempo, 8 de 10 ({{page:c-test-auton}}). Con grados del motor, 6 de 10 en una prueba rápida.",
+        "process": "Diego y Renata compararon las opciones; Tomás (piloto) aprobó.",
+        "expectations": "10 de 10 corridas con 2 piezas en la siguiente prueba."
+      }
+    },
+    {
+      "id": "m-build-intake-4",
+      "type": "buildIteration",
+      "section": "mechanics",
+      "date": "2026-10-03",
+      "authors": ["emilio", "ximena"],
+      "subsystem": "intake",
+      "thread": "intake",
+      "fields": {
+        "origin": "Continúa la iteración #3 ({{page:m-build-intake-3}}): el agarre bajaba con piezas gastadas.",
+        "changes": "Ligas de 1/4\" en lugar de 3/8\" para comprimir más la pieza; segundo motor en el rodillo de arriba.",
+        "photos": { "images": [{ "src": "fotos/intake-v4.jpg", "caption": "Intake v4 con segundo motor" }] },
+        "testResults": "19 de 20 con piezas nuevas y 18 de 20 con piezas gastadas.",
+        "nextSteps": "Documentar el mecanismo ({{page:m-mechanism-intake}}) y congelarlo para el torneo."
+      },
+      "changes": [
+        { "change": "Ligas de 1/4\" y segundo motor", "test": "m-build-intake-3", "evidence": "agarre bajo con piezas gastadas", "result": "18 de 20 con piezas gastadas" }
+      ]
+    },
+    {
+      "id": "c-code-pid",
+      "type": "codeDoc",
+      "section": "coding",
+      "date": "2026-10-05",
+      "authors": ["diego", "renata"],
+      "subsystem": "PID del chasis",
+      "fields": {
+        "purpose": "Que el robot avance distancias exactas y gire a ángulos exactos en el autónomo, aunque la batería no esté llena.",
+        "rationale": "Decidido en {{page:c-decision}}. El control por tiempo dependía de la batería; el PID corrige con el sensor.",
+        "pseudocode": { "images": [{ "src": "fotos/codigo.png", "caption": "Función drivePID() comentada" }] },
+        "debugging": "v0.5: con kP = 0.8 el robot oscilaba casi un segundo alrededor del objetivo antes de detenerse; bajamos a kP = 0.5 y la oscilación desapareció, pero el robot se quedaba 2 cm corto.\nv0.6: agregamos kI = 0.002 para corregir el error que se quedaba al final. El término integral crecía demasiado mientras el robot estaba atorado contra la pared, y al soltarse salía disparado; lo limitamos a ±20 % de la potencia y lo reiniciamos al cruzar el objetivo.\nv0.7: el giro de 90° quedaba en 86°. El sensor inercial no estaba calibrado al iniciar: ahora esperamos 2 s de calibración antes del autónomo, y dejamos el robot quieto durante ese tiempo.\nv0.8: probamos kD = 1.5 para frenar antes de llegar; mejoró el giro pero hizo más lento el avance, así que usamos constantes distintas para avanzar y para girar.\nv0.9: agregamos un tiempo máximo de 1.5 s por movimiento para que el autónomo no se quede atorado si algo bloquea al robot.\nv1.0: limpiamos el código, separamos las constantes en un archivo y escribimos comentarios en cada función.\nv1.1: en el campo de práctica el robot se desviaba a la izquierda al avanzar 48\". Agregamos una corrección de rumbo con el sensor inercial mientras avanza: si el rumbo cambia más de 1°, se reduce la potencia del lado que va adelantado.\nv1.2: la corrección de rumbo hacía que el robot zigzagueara a baja velocidad; la desactivamos cuando la potencia es menor a 20 %.\nv1.3: medimos el tiempo total del autónomo con 10 corridas: 13.2 s en promedio, con 1.8 s de margen. Quitamos una espera de 300 ms que ya no hacía falta.\nv1.4: Renata agregó un registro en la pantalla del Brain con el error final de cada movimiento, para revisar las corridas sin cronómetro.\nLo escribió Diego; Renata ajustó las constantes con la hoja de cálculo de pruebas y revisó cada versión antes de subirla al robot. Las constantes finales están en la tabla del archivo de configuración y en el resumen del código.",
+        "relatedTests": "{{page:c-test-auton}} (antes del PID); {{page:s-test}} (después del PID)."
+      },
+      "changes": [
+        { "change": "Giros y avances con PID", "test": "c-test-auton", "evidence": "8 de 10 con giros por tiempo", "result": "10 de 10 ({{page:s-test}})" }
+      ],
+      "credits": [
+        { "source": "Tutorial ficticio \"PID para principiantes\", foro de ejemplo", "used": "Estructura del ciclo PID", "changes": "Agregamos límite al término integral y tiempo máximo" }
+      ]
+    },
+    {
+      "id": "m-mechanism-intake",
+      "type": "mechanism",
+      "section": "mechanics",
+      "date": "2026-10-06",
+      "authors": ["emilio"],
+      "subsystem": "intake v4",
+      "fields": {
+        "purpose": "Intake de dos rodillos: toma una pieza del suelo y la sube a la canasta.",
+        "picture": { "images": [{ "src": "fotos/mecanismo-cad.png", "caption": "CAD con etiquetas" }] },
+        "labels": [
+          ["1", "Rodillo de arriba", "Sube la pieza; segundo motor desde v4"],
+          ["2", "Guía impresa", "Solo deja pasar una pieza (v3)"],
+          ["3", "Rodillo de abajo", "Jala la pieza del suelo"],
+          ["4", "Sensor de distancia", "Detiene el intake cuando hay pieza"]
+        ],
+        "howItWorks": "Dos motores de 200 rpm con reducción 36:48 (150 rpm) mueven los rodillos en sentidos opuestos. Las ligas comprimen la pieza 1/4\" para agarrarla."
+      }
+    },
+    {
+      "id": "s-auton",
+      "type": "autonomousPlan",
+      "section": "strategy",
+      "date": "2026-10-08",
+      "authors": ["tomas", "diego"],
+      "subsystem": "lado izquierdo",
+      "fields": {
+        "path": { "images": [{ "src": "fotos/ruta-autonomo.png", "caption": "Ruta con pasos numerados" }] },
+        "steps": [
+          ["1", "Salir de la zona de inicio", "Robot en posición", "0"],
+          ["2", "Tomar la pieza 1", "Pieza en el intake", "0"],
+          ["3", "Girar 90° y anotar", "Pieza en la meta", "5"],
+          ["4", "Tomar la pieza 2", "Pieza en el intake", "0"],
+          ["5", "Anotar y estacionarse", "Pieza en la meta", "5 + 12"]
+        ],
+        "rationale": "Anotamos primero las piezas más cercanas para asegurar la bonificación. No intentamos la tercera pieza: no alcanza el tiempo.",
+        "testResults": "Probado en {{page:s-test}}: 10 de 10 con PID."
+      }
+    },
+    {
+      "id": "s-test",
+      "type": "test",
+      "section": "strategy",
+      "date": "2026-10-09",
+      "authors": ["tomas", "diego"],
+      "subsystem": "autónomo con PID",
+      "fields": {
+        "hypothesis": "Con PID, la rutina anota 2 piezas en 10 de 10 corridas.",
+        "setup": [["Piezas anotadas en 15 s"], ["Conteo a mano"], ["Batería entre 60 y 100 %, código v1.0"], ["10"], ["09/10/2026, Tomás y Diego"]],
+        "results": [
+          ["1-5", "10 piezas", "Batería al 100 %", "1.0"],
+          ["6-10", "10 piezas", "Batería al 60 %", "1.0"]
+        ],
+        "analysis": "10 de 10 corridas con 2 piezas, también con batería baja.",
+        "conclusion": "Usamos esta rutina en el torneo de práctica ({{page:s-decision}})."
+      }
+    },
+    {
+      "id": "m-reflection",
+      "type": "reflection",
+      "section": "mechanics",
+      "date": "2026-10-10",
+      "authors": ["ximena", "emilio", "mariana"],
+      "subsystem": "intake, septiembre y octubre",
+      "fields": {
+        "period": "Del 05/09/2026 al 10/10/2026 ({{page:m-problem}} a {{page:m-mechanism-intake}}).",
+        "worked": "Cuatro iteraciones del intake, cada una con una prueba que explicaba la siguiente.",
+        "didNotWork": "Tardamos en probar con piezas gastadas; lo descubrimos hasta la iteración #4.",
+        "learned": "Probar con piezas en distintas condiciones desde el principio.",
+        "planChanges": "Emilio prepara un banco de pruebas con piezas nuevas y gastadas para la siguiente iteración.",
+        "tracker": [["Optimizar", "Velocidad del ciclo"], ["Desarrollar", "Plan del lado derecho"], ["Optimizar", "Ajuste fino del PID"]]
+      }
+    },
+    {
+      "id": "s-decision",
+      "type": "decision",
+      "section": "strategy",
+      "date": "2026-10-11",
+      "authors": ["tomas", "ximena"],
+      "subsystem": "plan del torneo",
+      "fields": {
+        "decision": "En el torneo usamos el plan B (anotar y estacionarse) y el autónomo izquierdo.",
+        "options": [
+          ["Plan B + autónomo izquierdo", "Probado 10 de 10", "Solo funciona del lado izquierdo", "{{page:s-test}}"],
+          ["Plan A sin estacionarse", "Más ciclos", "Perdemos 8 puntos seguros", "{{page:s-brainstorm}}"]
+        ],
+        "evidence": "El autónomo izquierdo anotó 10 de 10 ({{page:s-test}}).",
+        "process": "Votación del equipo (6 a 1).",
+        "expectations": "Ganar la mayoría de los partidos de práctica."
+      }
+    },
+    {
+      "id": "c-reflection",
+      "type": "reflection",
+      "section": "coding",
+      "date": "2026-10-12",
+      "authors": ["diego", "renata"],
+      "subsystem": "código del autónomo",
+      "fields": {
+        "period": "Del 06/09/2026 al 12/10/2026.",
+        "worked": "El PID hizo el autónomo repetible incluso con batería baja.",
+        "didNotWork": "Ajustar constantes a mano tomó tres sesiones.",
+        "learned": "Registrar cada cambio de constante con su resultado.",
+        "planChanges": "Renata hace una hoja de cálculo para ajustar el PID.",
+        "tracker": [["Optimizar", "Ciclo del intake"], ["Desarrollar", "Lado derecho"], ["Optimizar", "Constantes del PID"]]
+      }
+    },
+    {
+      "id": "w-reflection",
+      "type": "reflection",
+      "section": "wiring",
+      "date": "2026-10-12",
+      "authors": ["mariana"],
+      "subsystem": "cableado",
+      "fields": {
+        "period": "Del 18/09/2026 al 12/10/2026.",
+        "worked": "Ninguna desconexión en el torneo de práctica.",
+        "didNotWork": "Cambiar un motor tarda 10 minutos con los cables por dentro.",
+        "learned": "Dejar 3 cm de cable extra en cada motor.",
+        "planChanges": "Mariana etiqueta cada cable con su puerto.",
+        "tracker": [["Optimizar", "Etiquetas"], ["Reflexionar", "Mapa de puertos"], ["Optimizar", "Cables más cortos"]]
+      }
+    },
+    {
+      "id": "s-reflection",
+      "type": "reflection",
+      "section": "strategy",
+      "date": "2026-10-13",
+      "authors": ["tomas", "renata"],
+      "subsystem": "torneo de práctica",
+      "fields": {
+        "period": "Torneo de práctica del 10/10/2026.",
+        "worked": "Ganamos 3 de 4 partidos; el autónomo funcionó en los 4.",
+        "didNotWork": "Perdimos el partido en que nos tocó el lado derecho: no tenemos rutina para ese lado.",
+        "learned": "Necesitamos una rutina para cada lado.",
+        "planChanges": "Diego y Tomás planean el autónomo derecho.",
+        "tracker": [["Desarrollar", "Ciclos más rápidos"], ["Definir", "Autónomo derecho"], ["Desarrollar", "Rutina espejo"]]
+      }
+    }
+  ]
+}
