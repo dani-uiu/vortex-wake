@@ -1,0 +1,27 @@
+# Dependencias y archivos generados
+node_modules/
+dist/
+.vite/
+coverage/
+
+# Cloudflare
+.wrangler/
+.dev.vars
+.env
+.env.*
+
+# Planes internos y trabajo personal: el repositorio es público
+PLAN.md
+internal/
+personal/
+
+# Datos del equipo: entradas, fotos y notebooks generados nunca se suben
+data/
+output/
+*.local.json
+
+# Archivos temporales de Office y del sistema
+~$*
+Thumbs.db
+desktop.ini
+.DS_Store
