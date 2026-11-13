@@ -98,7 +98,7 @@ Páginas automáticas (no se escriben en el documento): tabla de contenido, **Te
 
 Portada → recursos → tabla de contenido → resúmenes y créditos → separador de Organización, integrantes y cronología → Mechanics, Coding, Wiring y Strategy, cada una con su separador y sus páginas por fecha (empates: en el orden del documento). El registro de cambios de cada sección va al final de esa sección. Las páginas de referencia, solo con `--reference-pages`.
 
-No salen: "How to Use This Template", "Rubric Map", las páginas modelo sin usar, los calendarios, el mapa de puertos, el mapa del control y los mapas del campo, ni las notas "RUBRIC TIP" / "SUMMARY PAGE".
+No salen: "How to Use This Template", "Rubric Map", las páginas modelo sin usar, el calendario semanal y las páginas de los mapas del campo (el mapa sí se usa dentro del plan de autónomo), ni las notas "RUBRIC TIP" / "SUMMARY PAGE". Los calendarios mensuales y los mapas de puertos y del control salen solo si hay sesiones o mapas (ver abajo).
 
 Prefijos de la numeración por sección: `G` páginas comunes (general), `T` organización del equipo (team), `M` mecánica, `C` código, `W` cableado (wiring), `S` estrategia, `R` referencia. La portada y los separadores no llevan número. Las continuaciones llevan su propio número y no salen en la tabla de contenido. Los prefijos se pueden cambiar con la opción `prefixes`.
 
@@ -143,8 +143,17 @@ Solo para desarrollo (en la raíz): `typescript` (revisión de tipos), `vitest` 
 
 Las pruebas no sustituyen abrir el archivo: cada cambio al acomodo se revisó abriendo la salida en PowerPoint (por COM), exportando cada diapositiva a PNG y viéndolas una por una, y guardando y volviendo a abrir el archivo.
 
+## Páginas sobre diagramas e imágenes de la plantilla
+
+- **Calendarios mensuales** (`includeCalendars`, por defecto sí): en Organización, después de la cronología, un mes por cada página de calendario de la plantilla que tenga sesiones (se reconocen por el título "Mes Año" y una tabla de un renglón por día). El renglón del día lleva la reunión y el resumen del cierre, recortado a un renglón. Los meses que la plantilla no trae dan un aviso.
+- **Mapa de puertos del Brain y mapa del control** (`robotMaps`): en Cableado, en orden de fecha; cada puerto, botón o palanca es el cuadro de texto de la plantilla (`robotMaps` en `field-map.json`), con la letra ajustada para no encimarse con el número del patrón; se agrega un título arriba.
+- **Fotos anotadas y ruta del autónomo** (`ImageRef.marks`): círculos con texto y conectores con punta de flecha (`src/marks.ts`), agrupados con la imagen. `template:field` es el mapa del campo: la imagen de fondo del patrón de la página "Campo en blanco" (`templateImages` en `field-map.json`), recortada con `srcRect` al cuadro del campo (`FIELD_IMAGE` en shared).
+- **Registro de torneo** (`tournamentLog`): como "trabajo del día", se arma sobre la página en blanco; usa la tabla de prioridades y un recuadro de la página de análisis del juego, con encabezados y anchos de columna reescritos (`base.stack`, `base.tableHeaders`, `base.columnWidthsPt`).
+- `ChangeRecord.section`: un cambio que va al registro de otra sección (los ajustes de un torneo).
+
 ## Pendiente
 
-- Calendarios (semanal y mensuales), mapa de puertos del Brain, mapa del control y mapas del campo: quedan fuera de esta etapa (no se incluyen en la salida).
+- Calendario semanal y páginas de campo como referencia: siguen fuera de la salida.
+- Los días de la semana de los calendarios vienen en inglés en el patrón de la plantilla (T, F, S…).
 - Fecha de cada continuación: usa la de la página original.
 - Los resúmenes de temporada y de código se escriben a mano en el documento; todavía no se prellenan con hitos ni programas.

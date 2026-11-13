@@ -185,6 +185,8 @@ scripts/harness.ts      el Worker en el entorno local, para las pruebas
 test/                   pruebas (corren en el entorno local de Workers)
 ```
 
+`0002_tasks.sql` agrega la tabla `tasks` (pendientes entre sesiones); no toca las demás. Al publicar la versión que la usa, `npm run nube:publicar` la aplica antes de subir el Worker (pregunta antes). `npm run nube:subir-datos` también sube `data/tasks/`.
+
 Para agregar una tabla o columna: un archivo nuevo en `migrations/` (`0002_….sql`); `npm run nube:publicar` lo aplica a la nube y `npm run nube:local` al simulador. Nunca se edita una migración ya aplicada.
 
 ## Pruebas
