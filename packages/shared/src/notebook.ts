@@ -37,6 +37,23 @@ export interface NotebookDocument {
   editors?: string[];
   sessions?: NotebookSession[];
   pages: NotebookPage[];
+  /**
+   * Mapas de puertos del Brain y del control, por robot y por versión. Van en
+   * Cableado, en orden de fecha, sobre las páginas de la plantilla que traen
+   * esos diagramas. Opcional.
+   */
+  robotMaps?: RobotMapPage[];
+}
+
+export interface RobotMapPage {
+  id: string;
+  kind: 'ports' | 'controller';
+  /** Nombre del robot (va en el título). */
+  robot: string;
+  date: IsoDate;
+  authors: string[];
+  /** Lugar (`PORT_SLOTS` o `CONTROLLER_SLOTS`) → qué hay ahí. */
+  slots: Record<string, string>;
 }
 
 export interface NotebookMember {

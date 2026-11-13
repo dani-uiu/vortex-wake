@@ -8,6 +8,7 @@ import { FIELD_IMAGE, TEMPLATE_FIELD_IMAGE, parseNotebook, replacePageRefs, type
 import { defaultFieldMap, type FieldMap, type FixedPageId } from './field-map.ts';
 import { LABELS, formatDate } from './format.ts';
 import { readImageInfo } from './images.ts';
+import { missingCalendarMonths, renderCalendar, renderRobotMap } from './maps-render.ts';
 import { layoutPage, readModelGeometry, type PageLayout } from './layout.ts';
 import { textWidthPt, wrapText } from './measure.ts';
 import { CONTENT_TYPES, REL_TYPES, nextRelId, relativeTarget, relsPathFor, resolveTarget, type OpcPackage, type Relationship } from './opc.ts';
@@ -27,6 +28,8 @@ export interface GenerateOptions {
   includeResources?: boolean;
   /** Conserva el texto de ayuda gris bajo cada encabezado (por defecto se quita). */
   keepHelpText?: boolean;
+  /** Calendarios mensuales con las sesiones (por defecto sí, en los meses que trae la plantilla). */
+  includeCalendars?: boolean;
   /** Prefijos de la numeración por sección. */
   prefixes?: Partial<Record<NumberGroup, string>>;
   fieldMap?: FieldMap;
@@ -105,11 +108,14 @@ export async function generateNotebook(params: {
   };
 
   // 2. Páginas lógicas.
+  const calendarSlides = opts.includeCalendars === false ? [] : template.calendarSlides();
   const logical = planNotebook(doc, lookup, {
     includeResources: opts.includeResources ?? true,
     includeReferencePages: opts.includeReferencePages ?? false,
     referenceSlides: template.sectionSlides('reference'),
+    calendarSlides,
   });
+  if (opts.includeCalendars !== false) warnings.push(...missingCalendarMonths(doc, calendarSlides));
 
   // 3. Páginas físicas (con continuaciones).
   const style = map.standard;
@@ -132,6 +138,14 @@ export async function generateNotebook(params: {
         break;
       case 'asIs':
         physical.push({ logical: lp, model: lp.slide, group: lp.group });
+        break;
+      case 'robotMap': {
+        const spec = map.robotMaps?.[lp.map.kind];
+        physical.push({ logical: lp, model: template.robotMapSlide(lp.map.kind), group: lp.group, title: `${spec?.title[lang] ?? ''}: ${lp.map.robot}` });
+        break;
+      }
+      case 'calendar':
+        physical.push({ logical: lp, model: lp.slide, group: lp.group, title: lp.title });
         break;
       case 'content': {
         const model = template.modelFor(lp.type, lp.section, lang);
@@ -263,6 +277,11 @@ export async function generateNotebook(params: {
       g.pageId = page.logical.pageId;
       g.type = page.logical.type;
     }
+    if (page.logical.kind === 'robotMap') {
+      g.pageId = page.logical.map.id;
+      g.type = page.logical.map.kind === 'ports' ? 'portMap' : 'controllerMap';
+    }
+    if (page.logical.kind === 'calendar') g.type = 'calendar';
     if (page.number) g.number = page.number;
     if (page.title) g.title = resolveRefs(page.title);
     if (page.continuation) g.continuation = true;
@@ -368,7 +387,7 @@ function isTocEntry(p: PhysicalPage): boolean {
   if (p.continuation) return false;
   const k = p.logical.kind;
   // Las páginas de referencia (rayada, en blanco...) no tienen título: basta con su separador.
-  return k === 'content' || k === 'divider' || k === 'resources';
+  return k === 'content' || k === 'divider' || k === 'resources' || k === 'robotMap' || k === 'calendar';
 }
 
 function tocLine(p: PhysicalPage, template: Template, lang: 'es' | 'en', resolve: (s: string) => string): TocLine {
@@ -379,6 +398,8 @@ function tocLine(p: PhysicalPage, template: Template, lang: 'es' | 'en', resolve
   if (lp.kind === 'content') {
     return { number: p.number ?? '', title: resolve(p.title ?? ''), date: formatDate(lp.date, lang), header: false };
   }
+  if (lp.kind === 'robotMap') return { number: p.number ?? '', title: p.title ?? '', date: formatDate(lp.map.date, lang), header: false };
+  if (lp.kind === 'calendar') return { number: p.number ?? '', title: p.title ?? '', date: '', header: false };
   return { number: p.number ?? '', title: slideTitleText(template, p.model), date: '', header: false };
 }
 
@@ -428,6 +449,12 @@ function renderPage(
     }
     case 'asIs':
       setFooter(editor, map, { project: doc.project, name: '', date: '', page: page.number ?? '' });
+      return;
+    case 'robotMap':
+      renderRobotMap(editor, page, doc, map);
+      return;
+    case 'calendar':
+      renderCalendar(editor, page, lp, doc, map);
       return;
     case 'content':
       break;

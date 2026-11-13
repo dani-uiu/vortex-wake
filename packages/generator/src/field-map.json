@@ -230,6 +230,38 @@
       }
     }
   },
+  "robotMaps": {
+    "$comment": "Páginas de Cableado con el diagrama del Brain y del control. Cada lugar es un cuadro de texto de la plantilla ('PUERTO', 'BOTÓN'...) que se cambia por lo que va ahí. El título se agrega arriba, en el cuadro 'titleBox' (puntos).",
+    "ports": {
+      "section": "wiring",
+      "shapes": ["Google Shape;294;p36", "Google Shape;295;p36", "Google Shape;296;p36", "Google Shape;297;p36", "Google Shape;298;p36", "Google Shape;299;p36", "Google Shape;300;p36", "Google Shape;301;p36", "Google Shape;302;p36", "Google Shape;303;p36", "Google Shape;304;p36", "Google Shape;305;p36", "Google Shape;306;p36", "Google Shape;307;p36", "Google Shape;308;p36", "Google Shape;309;p36", "Google Shape;310;p36", "Google Shape;311;p36", "Google Shape;312;p36", "Google Shape;313;p36", "Google Shape;314;p36", "Google Shape;315;p36", "Google Shape;316;p36", "Google Shape;317;p36", "Google Shape;318;p36", "Google Shape;319;p36", "Google Shape;320;p36", "Google Shape;321;p36", "Google Shape;322;p36", "Google Shape;323;p36", "Google Shape;324;p36", "Google Shape;325;p36", "Google Shape;326;p36"],
+      "slots": {
+        "1": "Google Shape;305;p36", "2": "Google Shape;306;p36", "3": "Google Shape;307;p36", "4": "Google Shape;308;p36", "5": "Google Shape;309;p36",
+        "6": "Google Shape;310;p36", "7": "Google Shape;311;p36", "8": "Google Shape;312;p36", "9": "Google Shape;313;p36", "10": "Google Shape;314;p36",
+        "11": "Google Shape;294;p36", "12": "Google Shape;295;p36", "13": "Google Shape;296;p36", "14": "Google Shape;297;p36", "15": "Google Shape;298;p36",
+        "16": "Google Shape;299;p36", "17": "Google Shape;300;p36", "18": "Google Shape;301;p36", "19": "Google Shape;302;p36", "20": "Google Shape;303;p36",
+        "21": "Google Shape;304;p36",
+        "A": "Google Shape;315;p36", "B": "Google Shape;316;p36", "C": "Google Shape;317;p36", "D": "Google Shape;318;p36",
+        "E": "Google Shape;319;p36", "F": "Google Shape;320;p36", "G": "Google Shape;321;p36", "H": "Google Shape;322;p36"
+      },
+      "footer": { "project": "Google Shape;323;p36", "name": "Google Shape;324;p36", "date": "Google Shape;325;p36", "page": "Google Shape;326;p36" },
+      "titleBox": { "x": 150, "y": 6, "w": 312, "h": 22 },
+      "title": { "es": "Mapa de puertos del Brain", "en": "Brain Port Map" }
+    },
+    "controller": {
+      "section": "wiring",
+      "shapes": ["Google Shape;331;p37", "Google Shape;332;p37", "Google Shape;333;p37", "Google Shape;334;p37", "Google Shape;335;p37", "Google Shape;336;p37", "Google Shape;337;p37", "Google Shape;338;p37", "Google Shape;339;p37", "Google Shape;340;p37", "Google Shape;341;p37", "Google Shape;342;p37", "Google Shape;343;p37", "Google Shape;344;p37", "Google Shape;345;p37", "Google Shape;346;p37", "Google Shape;347;p37", "Google Shape;348;p37", "Google Shape;349;p37", "Google Shape;350;p37"],
+      "slots": {
+        "L2": "Google Shape;331;p37", "L1": "Google Shape;332;p37", "axis3": "Google Shape;333;p37", "axis4": "Google Shape;334;p37",
+        "up": "Google Shape;335;p37", "left": "Google Shape;336;p37", "right": "Google Shape;337;p37", "down": "Google Shape;338;p37",
+        "R2": "Google Shape;339;p37", "R1": "Google Shape;340;p37", "axis2": "Google Shape;341;p37", "axis1": "Google Shape;342;p37",
+        "X": "Google Shape;343;p37", "A": "Google Shape;344;p37", "Y": "Google Shape;345;p37", "B": "Google Shape;346;p37"
+      },
+      "footer": { "project": "Google Shape;347;p37", "name": "Google Shape;348;p37", "date": "Google Shape;349;p37", "page": "Google Shape;350;p37" },
+      "titleBox": { "x": 150, "y": 24, "w": 312, "h": 24 },
+      "title": { "es": "Mapa del control", "en": "Controller Map" }
+    }
+  },
   "templateImages": {
     "field": {
       "$comment": "Página 'Campo en blanco' de Estrategia: su imagen de fondo (en el patrón) es el mapa del campo. El recorte está en @vortex-wake/shared (FIELD_IMAGE).",

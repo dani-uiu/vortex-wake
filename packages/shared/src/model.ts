@@ -49,6 +49,70 @@ export interface Robot {
   id: string;
   name: string;
   subsystems: string[];
+  /** Mapa de puertos del Brain, con historial (la última es la vigente). Opcional. */
+  ports?: DeviceMapVersion[];
+  /** Mapa del control (qué hace cada botón y palanca), con historial. Opcional. */
+  controller?: DeviceMapVersion[];
+}
+
+/** Una versión de un mapa (puertos o control): qué va en cada lugar, y desde cuándo. */
+export interface DeviceMapVersion {
+  /** Día en que se guardó esta versión (va como fecha de la página). */
+  date: IsoDate;
+  savedAt: IsoDateTime;
+  by?: string;
+  /** Lugar → qué hay ahí. Lugares en `PORT_SLOTS` o `CONTROLLER_SLOTS`. */
+  slots: Record<string, string>;
+}
+
+export type DeviceMapKind = 'ports' | 'controller';
+
+/** Puertos del Brain V5: 1 a 21 (inteligentes) y A a H (3 hilos). */
+export const PORT_SLOTS: string[] = [...Array.from({ length: 21 }, (_, i) => String(i + 1)), ...'ABCDEFGH'.split('')];
+
+/** Botones y palancas del control V5, con su nombre en la interfaz. */
+export const CONTROLLER_SLOTS: [string, string][] = [
+  ['L1', 'L1'],
+  ['L2', 'L2'],
+  ['R1', 'R1'],
+  ['R2', 'R2'],
+  ['axis3', 'Palanca izquierda ↕ (3)'],
+  ['axis4', 'Palanca izquierda ↔ (4)'],
+  ['axis2', 'Palanca derecha ↕ (2)'],
+  ['axis1', 'Palanca derecha ↔ (1)'],
+  ['up', 'Flecha arriba'],
+  ['down', 'Flecha abajo'],
+  ['left', 'Flecha izquierda'],
+  ['right', 'Flecha derecha'],
+  ['X', 'X'],
+  ['A', 'A'],
+  ['B', 'B'],
+  ['Y', 'Y'],
+];
+
+/** Solo los lugares con texto (sin espacios de más). */
+export function cleanSlots(slots: Record<string, string>): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(slots)) if (v.trim()) out[k] = v.trim();
+  return out;
+}
+
+/**
+ * Guarda una versión nueva de un mapa conservando el historial: si no cambió
+ * nada, no se agrega; si la última versión es del mismo día, se reemplaza (un
+ * día = una versión); si no, se agrega y la anterior queda con su fecha.
+ */
+export function saveMapVersion(history: DeviceMapVersion[] | undefined, slots: Record<string, string>, date: IsoDate, now: IsoDateTime, by?: string): DeviceMapVersion[] {
+  const list = [...(history ?? [])];
+  const clean = cleanSlots(slots);
+  const last = list[list.length - 1];
+  const same = (a: Record<string, string>, b: Record<string, string>) => JSON.stringify(Object.entries(a).sort()) === JSON.stringify(Object.entries(b).sort());
+  if (last && same(last.slots, clean)) return list;
+  if (!last && Object.keys(clean).length === 0) return list;
+  const v: DeviceMapVersion = { date, savedAt: now, slots: clean, ...(by ? { by } : {}) };
+  if (last && last.date === date) list[list.length - 1] = v;
+  else list.push(v);
+  return list;
 }
 
 // --- Sesiones -------------------------------------------------------------------

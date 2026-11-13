@@ -240,6 +240,20 @@ export function validateNotebook(input: unknown): ValidationResult {
     });
   }
 
+  if (doc.robotMaps !== undefined) {
+    if (!Array.isArray(doc.robotMaps)) add('robotMaps', 'debe ser una lista');
+    else doc.robotMaps.forEach((m, i) => {
+      const p = `robotMaps[${i}]`;
+      if (!isObject(m)) return add(p, 'debe ser un objeto');
+      if (typeof m.id !== 'string' || !ID_RE.test(m.id) || pageIds.has(m.id)) add(`${p}.id`, 'id inválido o repetido');
+      if (m.kind !== 'ports' && m.kind !== 'controller') add(`${p}.kind`, 'debe ser "ports" o "controller"');
+      requireString(m, 'robot', p, add);
+      if (!isValidDate(m.date)) add(`${p}.date`, 'fecha inválida (formato AAAA-MM-DD)');
+      if (!Array.isArray(m.authors) || m.authors.some((a) => typeof a !== 'string' || !memberIds.has(a))) add(`${p}.authors`, 'integrantes desconocidos');
+      if (!isObject(m.slots) || Object.values(m.slots).some((v) => typeof v !== 'string')) add(`${p}.slots`, 'debe ser un objeto { lugar: texto }');
+    });
+  }
+
   for (const r of refs) {
     if (!pageIds.has(r.id)) add(r.path, `referencia a una página que no existe: "${r.id}"`);
   }

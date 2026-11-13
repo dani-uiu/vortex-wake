@@ -342,6 +342,15 @@ export function checkTeam(v: unknown): string | undefined {
   if (!Array.isArray(v.robots)) return 'falta la lista de robots';
   for (const r of v.robots) {
     if (!isObj(r) || !isStr(r.id) || !isStr(r.name) || !isStrArr(r.subsystems)) return 'robot inválido';
+    for (const k of ['ports', 'controller'] as const) {
+      const hist = r[k];
+      if (hist === undefined) continue;
+      if (!Array.isArray(hist) || hist.length > 200) return `historial de ${k} inválido`;
+      for (const v of hist) {
+        if (!isObj(v) || !isValidDate(v.date) || !isIsoDateTime(v.savedAt) || !optStr(v.by) || !isObj(v.slots)) return `versión de ${k} inválida`;
+        if (!Object.values(v.slots).every((s) => isStr(s) && s.length <= MAX_NAME_LENGTH)) return `versión de ${k} inválida`;
+      }
+    }
   }
   return undefined;
 }

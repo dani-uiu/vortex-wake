@@ -20,7 +20,9 @@
 import {
   ALLIANCE_LABELS,
   MATCH_RESULT_LABELS,
+  cleanSlots,
   initialsOf,
+  slugify,
   type MatchElement,
   type RoutePoint,
   type CaptureSession,
@@ -47,6 +49,7 @@ import {
   type Language,
   type NotebookDocument,
   type NotebookPage,
+  type RobotMapPage,
   type PageTypeSpec,
 } from './notebook.ts';
 
@@ -373,6 +376,19 @@ export function assembleNotebook(input: AssembleInput): AssembleResult {
   };
   const editors = team.editors?.filter((e) => memberIds.has(e));
   if (editors && editors.length > 0) document.editors = editors;
+
+  // Mapas de puertos y del control: una página por versión (la anterior queda con su fecha).
+  const robotMaps: RobotMapPage[] = [];
+  for (const robot of team.robots) {
+    for (const kind of ['ports', 'controller'] as const) {
+      (robot[kind] ?? []).forEach((v, i) => {
+        if (Object.keys(cleanSlots(v.slots)).length === 0) return;
+        const by = v.by && memberIds.has(v.by) ? [v.by] : (editors && editors.length > 0 ? editors : fallbackAuthor ? [fallbackAuthor] : []);
+        robotMaps.push({ id: `map-${kind}-${slugify(robot.id)}-${i + 1}`, kind, robot: robot.name, date: v.date, authors: by, slots: cleanSlots(v.slots) });
+      });
+    }
+  }
+  if (robotMaps.length > 0) document.robotMaps = robotMaps;
   return { document, warnings, photoIds: [...photoIds] };
 
   function hasTrials(g: Group): boolean {

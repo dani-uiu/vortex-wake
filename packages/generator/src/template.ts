@@ -102,6 +102,38 @@ export class Template {
     return this.slides.filter((s) => s.section === section);
   }
 
+  /** Página del mapa de puertos o del control (por su huella). */
+  robotMapSlide(kind: 'ports' | 'controller'): TemplateSlide {
+    const spec = this.map.robotMaps?.[kind];
+    if (!spec) throw new TemplateError(`el mapa de campos no describe la página "${kind}"`);
+    const slide = this.findByFingerprint({ shapes: [...spec.shapes].sort(), tables: {} }, spec.section);
+    if (!slide) throw new TemplateError(`La plantilla no tiene la página del ${kind === 'ports' ? 'mapa de puertos' : 'mapa del control'} en Cableado (ver robotMaps en field-map.json).`);
+    return slide;
+  }
+
+  /**
+   * Calendarios mensuales: páginas de Organización cuyo título es un mes y un
+   * año ("Octubre 2026", "October 2026") y que traen una tabla de una columna
+   * (un renglón por día; la letra del día y el número vienen en el patrón).
+   */
+  calendarSlides(): { slide: TemplateSlide; year: number; month: number; table: string; title: string }[] {
+    const out: { slide: TemplateSlide; year: number; month: number; table: string; title: string }[] = [];
+    for (const s of this.sectionSlides('organization')) {
+      if (s.divider) continue;
+      const table = s.shapes.find((sh) => sh.tableColumns === 1 && (sh.tableRows ?? 0) >= 28);
+      if (!table) continue;
+      const root = this.pkg.getXml(s.part).documentElement as unknown as Element;
+      const title = shapeElements(root)
+        .filter((el) => descendants(el, NS.p, 'ph').some((ph) => ph.getAttribute('type') === 'title'))
+        .map((el) => descendants(el, NS.a, 't').map((t) => t.textContent ?? '').join('').trim())[0];
+      const m = title ? /^\s*([A-Za-zÁÉÍÓÚáéíóúñÑ]+)\s+(\d{4})\s*$/.exec(title) : null;
+      const month = m ? MONTHS.indexOf((m[1] as string).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')) % 12 : -1;
+      if (!m || month < 0) continue;
+      out.push({ slide: s, year: Number(m[2]), month: month + 1, table: table.name, title: title as string });
+    }
+    return out;
+  }
+
   /**
    * El mapa del campo: la imagen de fondo del patrón de la página "Campo en
    * blanco" (página completa), para recortarla al cuadro del campo.
@@ -229,6 +261,12 @@ function replaceText(shape: Element, change: (current: string) => string): void 
   const paras = descendants(shape, NS.a, 'p');
   for (const p of paras) if (p !== first.parentNode) p.parentNode?.removeChild(p);
 }
+
+/** Meses en español y en inglés (sin acentos), para reconocer los calendarios. */
+const MONTHS = [
+  'enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre',
+  'january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'september', 'october', 'november', 'december',
+];
 
 /** Cambia el texto de cada celda del encabezado de una tabla (conservando su formato). */
 function rewriteTableHeader(frame: Element, headers: string[]): void {
