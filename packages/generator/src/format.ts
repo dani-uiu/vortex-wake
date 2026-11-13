@@ -11,10 +11,14 @@ export const LABELS = {
   es: {
     continued: '(continuación)',
     continuedShort: '(cont.)',
+    reviewHeading: 'NOTA DE REVISIÓN',
+    reviewFooter: 'Borra esta nota antes de la evaluación.',
   },
   en: {
     continued: '(continued)',
     continuedShort: '(cont.)',
+    reviewHeading: 'REVIEW NOTE',
+    reviewFooter: 'Delete this note before judging.',
   },
 } as const;
 

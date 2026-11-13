@@ -9,7 +9,7 @@ import type { PlaceholderRef, StandardDefaults, TocMapping } from './field-map.t
 import { languageTag } from './format.ts';
 import { layoutGrid } from './images.ts';
 import type { AreaPlacement, BlockPlacement, BoxPt, TablePlacement } from './layout.ts';
-import { ellipsize, type FontSpec } from './measure.ts';
+import { ellipsize, textHeightPt, type FontSpec } from './measure.ts';
 import type { ResolvedImage } from './plan.ts';
 import { EMU_PER_PT, cNvPrOf, readBox, shapeElements, shapeName, spTreeOf, writeBox } from './template.ts';
 import {
@@ -27,6 +27,12 @@ import {
 } from './xml.ts';
 
 const pt = (v: number) => Math.round(v * EMU_PER_PT);
+
+/** Nota de revisión: misma posición, ancho y color que las notas de rúbrica de la plantilla. */
+export const REVIEW_NOTE = { x: 414, y: 10, w: 165.6, minH: 93.6 } as const;
+export const REVIEW_NOTE_NAME = 'Nota de revisión';
+const REVIEW_NOTE_INSET_X = 7.2;
+const REVIEW_NOTE_INSET_Y = 5;
 
 export interface ImageSink {
   /** Registra la imagen en el paquete y devuelve el id de relación de la diapositiva. */
@@ -352,6 +358,50 @@ export class SlideEditor {
 
   spTree(): Element {
     return spTreeOf(this.root);
+  }
+
+  /**
+   * Agrega una nota adhesiva amarilla (como las notas de rúbrica de la
+   * plantilla) en la esquina superior derecha, con encabezado, el texto de
+   * revisión y el aviso de borrarla. Crece hacia abajo si el texto no cabe;
+   * devuelve su caja para que quien llama avise si invade el contenido.
+   */
+  addReviewNote(text: string, labels: { heading: string; footer: string }): BoxPt {
+    const box = REVIEW_NOTE;
+    const inner = box.w - REVIEW_NOTE_INSET_X * 2;
+    const heading: FontSpec = { sizePt: 8, bold: true };
+    const body: FontSpec = { sizePt: 7 };
+    const foot: FontSpec = { sizePt: 6.5 };
+    const needed =
+      REVIEW_NOTE_INSET_Y * 2 +
+      textHeightPt(labels.heading, inner, heading) +
+      textHeightPt(text, inner, body) +
+      3 +
+      textHeightPt(labels.footer, inner, foot);
+    const h = Math.max(box.minH, Math.ceil(needed));
+    const lang = languageTag(this.lang);
+    const run = (t: string, f: FontSpec, color: string, italic = false) =>
+      `<a:r><a:rPr lang="${lang}" sz="${Math.round(f.sizePt * 100)}" b="${f.bold ? 1 : 0}" i="${italic ? 1 : 0}" dirty="0"><a:solidFill><a:srgbClr val="${color}"/></a:solidFill></a:rPr><a:t>${escapeXml(t)}</a:t></a:r>`;
+    const para = (t: string, f: FontSpec, color: string, italic = false, spcBefore = 0) =>
+      t === ''
+        ? `<a:p><a:pPr algn="l"/><a:endParaRPr lang="${lang}" sz="${Math.round(f.sizePt * 100)}" dirty="0"/></a:p>`
+        : `<a:p><a:pPr algn="l">${spcBefore ? `<a:spcBef><a:spcPts val="${spcBefore * 100}"/></a:spcBef>` : ''}</a:pPr>${run(t, f, color, italic)}</a:p>`;
+    const paras = [
+      para(labels.heading, heading, 'A22124'),
+      ...text.split('\n').map((line) => para(line, body, '1A1A1A')),
+      para(labels.footer, foot, '5F6366', true, 3),
+    ].join('');
+    const id = this.newId();
+    const sp = fragment(
+      this.doc,
+      `<p:sp><p:nvSpPr><p:cNvPr id="${id}" name="${REVIEW_NOTE_NAME} ${id}"/><p:cNvSpPr txBox="1"/><p:nvPr/></p:nvSpPr>` +
+        `<p:spPr><a:xfrm rot="21480000"><a:off x="${pt(box.x)}" y="${pt(box.y)}"/><a:ext cx="${pt(box.w)}" cy="${pt(h)}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom>` +
+        `<a:solidFill><a:srgbClr val="FFF1A6"/></a:solidFill><a:ln><a:noFill/></a:ln>` +
+        `<a:effectLst><a:outerShdw blurRad="50800" dist="25400" dir="2700000" algn="tl" rotWithShape="0"><a:srgbClr val="000000"><a:alpha val="28000"/></a:srgbClr></a:outerShdw></a:effectLst></p:spPr>` +
+        `<p:txBody><a:bodyPr wrap="square" lIns="${pt(REVIEW_NOTE_INSET_X)}" tIns="${pt(REVIEW_NOTE_INSET_Y)}" rIns="${pt(REVIEW_NOTE_INSET_X)}" bIns="${pt(REVIEW_NOTE_INSET_Y)}" rtlCol="0" anchor="t"><a:noAutofit/></a:bodyPr><a:lstStyle/>${paras}</p:txBody></p:sp>`,
+    );
+    this.spTree().appendChild(sp);
+    return { x: box.x, y: box.y, w: box.w, h };
   }
 
   /** Ensancha el título hasta el borde derecho del contenido (ya no está la nota de rúbrica). */

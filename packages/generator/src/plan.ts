@@ -59,6 +59,8 @@ export interface ContentPage {
   title?: string;
   subsystem?: string;
   iteration?: number;
+  /** Nota de revisión (nota adhesiva), solo en la primera página. */
+  review?: string;
   fields: Record<string, FieldData>;
 }
 
@@ -171,6 +173,7 @@ function contentFromPage(p: NotebookPage, section: TemplateSection, group: Numbe
   if (p.title !== undefined) c.title = p.title;
   if (p.subsystem !== undefined) c.subsystem = p.subsystem;
   if (p.iteration !== undefined) c.iteration = p.iteration;
+  if (p.review !== undefined && p.review.trim() !== '') c.review = p.review;
   return c;
 }
 

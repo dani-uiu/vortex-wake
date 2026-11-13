@@ -177,7 +177,9 @@ export function validateNotebook(input: unknown): ValidationResult {
       optionalString(pg, 'title', p, add);
       optionalString(pg, 'subsystem', p, add);
       optionalString(pg, 'thread', p, add);
+      optionalString(pg, 'review', p, add);
       collectRefs(`${p}.title`, pg.title);
+      collectRefs(`${p}.review`, pg.review);
       if (pg.iteration !== undefined && (!Number.isInteger(pg.iteration) || (pg.iteration as number) < 1)) {
         add(`${p}.iteration`, 'debe ser un entero positivo');
       }

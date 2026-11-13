@@ -12,7 +12,7 @@ import { layoutPage, readModelGeometry, type PageLayout } from './layout.ts';
 import { textWidthPt, wrapText } from './measure.ts';
 import { CONTENT_TYPES, REL_TYPES, nextRelId, relativeTarget, relsPathFor, resolveTarget, type OpcPackage, type Relationship } from './opc.ts';
 import { planNotebook, type ContentPage, type LogicalPage, type NumberGroup, type ResolvedImage } from './plan.ts';
-import { SlideEditor, type ImageSink } from './render.ts';
+import { REVIEW_NOTE, SlideEditor, type ImageSink } from './render.ts';
 import { EMU_PER_PT, Template, readBox, type TemplateSlide } from './template.ts';
 import { NS, children, descendants, parseXml, path, remove, type Element } from './xml.ts';
 
@@ -251,7 +251,7 @@ export async function generateNotebook(params: {
       },
     };
     const editor = new SlideEditor(parseXml(model.xml), lang);
-    renderPage(editor, page, doc, map, opts, sink, resolveRefs, lookup);
+    renderPage(editor, page, doc, map, opts, sink, resolveRefs, lookup, (m) => warnings.push(m));
     editor.setCreationId(1000000 + i);
     out.setXml(part, editor.doc);
     out.writeRels(part, rels);
@@ -393,6 +393,7 @@ function renderPage(
   sink: ImageSink,
   resolve: (s: string) => string,
   lookup: (src: string) => ResolvedImage,
+  warn: (message: string) => void,
 ): void {
   const lp = page.logical;
   const lang = doc.language;
@@ -432,12 +433,16 @@ function renderPage(
     if (f.heading) editor.removeShape(f.heading);
   }
 
-  // Título, ensanchado hasta el borde del contenido.
+  // Nota de revisión (solo en la primera página): ocupa la esquina superior derecha.
+  const review = !page.continuation && lp.review ? lp.review : undefined;
+
+  // Título, ensanchado hasta el borde del contenido (o hasta la nota de revisión).
   const titleShape = editor.shape(std.title);
   if (titleShape) {
     const title = resolve(page.title ?? '');
     editor.setShapeText(titleShape, title);
-    const right = Math.max(0, ...(page.layout?.placements ?? []).map((p) => p.box.x + p.box.w));
+    let right = Math.max(0, ...(page.layout?.placements ?? []).map((p) => p.box.x + p.box.w));
+    if (review && right > REVIEW_NOTE.x - REVIEW_NOTE_GAP_PT) right = REVIEW_NOTE.x - REVIEW_NOTE_GAP_PT;
     if (right > 0) editor.widen(titleShape, right);
     shrinkLongTitle(titleShape, title, right);
   }
@@ -453,6 +458,15 @@ function renderPage(
       if (h) editor.keepFirstParagraph(h);
     }
     editor.placeBlock(resolved, f, std, sink);
+  }
+
+  if (review) {
+    // Al final del árbol de formas, para que quede encima de todo.
+    const note = editor.addReviewNote(resolve(review), { heading: LABELS[lang].reviewHeading, footer: LABELS[lang].reviewFooter });
+    const firstTop = Math.min(...(page.layout?.placements ?? []).map((p) => p.headingBox?.y ?? p.box.y));
+    if (Number.isFinite(firstTop) && note.y + note.h > firstTop) {
+      warn(`La nota de revisión de "${lp.pageId}" es larga y tapa parte del contenido; conviene acortarla.`);
+    }
   }
 
   setFooter(editor, map, {
@@ -484,6 +498,8 @@ function setFooter(editor: SlideEditor, map: FieldMap, values: { project: string
 }
 
 const FOOTER_FONT_PT = 11;
+/** Espacio entre el título y la nota de revisión. */
+const REVIEW_NOTE_GAP_PT = 8;
 /** Ancho del campo "Nombre" del pie (después de la etiqueta). */
 const FOOTER_NAME_WIDTH_PT = 235;
 

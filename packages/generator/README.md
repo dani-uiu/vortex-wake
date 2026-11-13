@@ -68,6 +68,7 @@ Lo define `packages/shared/src/notebook.ts` y lo valida `validateNotebook()` (me
 - **Referencias:** en cualquier texto, `{{page:ID}}` se cambia por el número de esa página con el esquema activo (`M-4` o `27`). El documento nunca guarda números de página. Conviene escribir "pág. {{page:ID}}", porque con numeración corrida el número queda solo.
 - **Recuadros:** texto (párrafos separados por `\n`) o `{ text, images, code }`. `code: true` usa letra monoespaciada (pseudocódigo).
 - **Tablas:** lista de filas, cada una lista de celdas. En las tablas de filas fijas (montaje de la prueba, plan de partido, iteration tracker) la primera columna ya trae su etiqueta en la plantilla y el documento llena las demás.
+- **Nota de revisión:** `review` (texto, párrafos con `\n`, admite `{{page:ID}}`) se dibuja en la primera página como nota adhesiva amarilla en la esquina superior derecha, igual que las notas de rúbrica de la plantilla, con el encabezado "NOTA DE REVISIÓN" y el aviso "Borra esta nota antes de la evaluación". Sirve para dejar pendientes, preguntas y fuentes a quien revisa; no es contenido de la bitácora. Con nota, el título no se ensancha debajo de ella. Si el texto no cabe, la nota crece hacia abajo y el generador avisa que tapa contenido.
 - **Título:** se toma el de la página modelo; `[subsystem]` se cambia por `subsystem` y `#__` por el número de iteración (explícito o según el orden del hilo). `title` reemplaza todo el título.
 
 Campos de cada tipo de página:

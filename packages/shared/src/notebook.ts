@@ -112,6 +112,13 @@ export interface NotebookPage {
   changes?: ChangeRecord[];
   /** Fuentes externas que van al resumen de créditos. */
   credits?: CreditRecord[];
+  /**
+   * Nota de revisión para quienes arman la bitácora (pendientes, fuentes,
+   * preguntas). Se dibuja como nota adhesiva amarilla en la esquina superior
+   * derecha de la primera página, con el aviso de borrarla antes de la
+   * evaluación. No es contenido de la bitácora.
+   */
+  review?: string;
 }
 
 export type FieldKind = 'area' | 'table' | 'fixedTable';
