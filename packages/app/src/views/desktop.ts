@@ -5,7 +5,7 @@
  * celular, adaptado a pantalla ancha.
  */
 
-import { hasClosing, isUnclassified, slugify, type Entry, type TeamConfig } from '@vortex-wake/shared';
+import { CONTROLLER_SLOTS, PORT_SLOTS, hasClosing, isUnclassified, saveMapVersion, slugify, type DeviceMapKind, type Entry, type TeamConfig } from '@vortex-wake/shared';
 import type { App } from '../app.ts';
 import { download, generateNotebookFile } from '../notebook.ts';
 import { dateLabel, h, icon, setChildren, toast } from '../ui.ts';
@@ -201,8 +201,10 @@ export function renderDesktop(root: HTMLElement, app: App, go: (hash: string) =>
     const shown = shownEntries();
     const byDate = new Map<string, Entry[]>();
     for (const e of shown) byDate.set(e.sessionDate, [...(byDate.get(e.sessionDate) ?? []), e]);
+    // Una sesión elegida sin entradas (solo asistencia) también se muestra: su cierre puede faltar.
+    if (selected !== 'all' && !onlyTodo && !byDate.has(selected) && app.sessions.has(selected)) byDate.set(selected, []);
     main.replaceChildren(
-      ...(shown.length === 0 ? [h('p', { class: 'muted empty', text: onlyTodo ? 'Todo está clasificado.' : 'No hay entradas.' })] : []),
+      ...(byDate.size === 0 ? [h('p', { class: 'muted empty', text: onlyTodo ? 'Todo está clasificado.' : 'No hay entradas.' })] : []),
       ...[...byDate.entries()].map(([d, list]) => {
         const s = app.sessions.get(d);
         const present = (s?.attendance ?? []).map((a) => app.memberName(a.memberId)).join(', ');
@@ -309,6 +311,78 @@ export function renderQr(root: HTMLElement, app: App): () => void {
   };
 }
 
+/**
+ * Mapa de puertos del Brain o del control de un robot: un campo por puerto
+ * (o botón). Al guardar queda una versión con la fecha de hoy; si ya había una
+ * de otro día, esa se conserva (historial) y sale como su propia página.
+ */
+function renderMapPanel(panel: HTMLElement, app: App, robotId: string, kind: DeviceMapKind, back: () => void): void {
+  const robot = app.team?.robots.find((r) => r.id === robotId);
+  if (!robot) return back();
+  const history = robot[kind] ?? [];
+  const current = history[history.length - 1]?.slots ?? {};
+  const slots: [string, string][] = kind === 'ports' ? PORT_SLOTS.map((s) => [s, /\d/.test(s) ? `Puerto ${s}` : `Puerto ${s} (3 hilos)`]) : CONTROLLER_SLOTS;
+  const values: Record<string, string> = { ...current };
+  const title = `${kind === 'ports' ? 'Mapa de puertos del Brain' : 'Mapa del control'} · ${robot.name}`;
+  const form = h(
+    'div',
+    { class: 'map-form', 'data-testid': `map-form-${kind}` },
+    slots.map(([slot, label]) => {
+      const id = `slot-${kind}-${slot}`;
+      const input = h('input', { type: 'text', id, value: values[slot] ?? '', placeholder: kind === 'ports' ? 'Motor, sensor…' : 'Qué hace', 'data-slot': slot, maxlength: '120' });
+      input.addEventListener('input', () => (values[slot] = input.value));
+      return h('div', { class: 'form-row' }, h('label', { class: 'form-label', for: id, text: label }), input);
+    }),
+  );
+  const old = history.slice(0, -1).reverse();
+  panel.replaceChildren(
+    h('header', { class: 'topbar editor-top' }, h('div', { class: 'topbar-row' }, h('button', { class: 'back', type: 'button', onclick: back }, icon('back'), 'Equipo'), h('h2', { text: title }))),
+    h(
+      'div',
+      { class: 'editor simple is-desk team-panel' },
+      h('p', { class: 'muted small', text: history.length > 0 ? `Versión vigente del ${dateLabel(history[history.length - 1]?.date ?? '')}. Si cambias algo, se guarda como versión de hoy y la anterior queda con su fecha en la bitácora.` : 'Escribe qué va en cada lugar; los vacíos no salen. Cada versión sale en la bitácora (Cableado) con su fecha.' }),
+      form,
+      h(
+        'div',
+        { class: 'row wrap' },
+        h(
+          'button',
+          {
+            class: 'btn primary',
+            type: 'button',
+            'data-testid': 'map-save',
+            onclick: async () => {
+              const team = app.team;
+              if (!team) return;
+              const robots = team.robots.map((r) => (r.id === robotId ? { ...r, [kind]: saveMapVersion(r[kind], values, app.today, new Date().toISOString(), app.me) } : r));
+              try {
+                app.team = await app.api.putTeam({ ...team, robots });
+                await app.db.setTeam(app.team);
+                toast('Mapa guardado');
+                app.emit();
+                back();
+              } catch (e) {
+                toast(`No se pudo guardar (¿hay conexión?): ${(e as Error).message}`);
+              }
+            },
+          },
+          'Guardar mapa',
+        ),
+        h('button', { class: 'btn secondary', type: 'button', onclick: back }, 'Cancelar'),
+      ),
+      old.length > 0 ? h('h2', { class: 'section-title', text: 'Versiones anteriores' }) : null,
+      ...old.map((v) =>
+        h(
+          'details',
+          { class: 'more is-desk map-old' },
+          h('summary', {}, h('span', { class: 'sum-text' }, h('span', { class: 'more-title', text: dateLabel(v.date) }), h('span', { class: 'sum-sub', text: `${Object.keys(v.slots).length} lugar(es)${v.by ? ` · ${app.memberName(v.by)}` : ''}` }))),
+          h('ul', { class: 'map-list' }, slots.filter(([s]) => v.slots[s]).map(([s, label]) => h('li', {}, h('b', { text: `${label}: ` }), v.slots[s] ?? ''))),
+        ),
+      ),
+    ),
+  );
+}
+
 function renderTeamPanel(panel: HTMLElement, app: App, close: () => void): void {
   const team = app.team;
   if (!team) return;
@@ -324,11 +398,22 @@ function renderTeamPanel(panel: HTMLElement, app: App, close: () => void): void 
         const subs = h('input', { type: 'text', id: sId, value: r.subsystems.join(', ') });
         n.addEventListener('input', () => (r.name = n.value));
         subs.addEventListener('input', () => (r.subsystems = subs.value.split(',').map((s) => s.trim()).filter((s) => s)));
+        const saved = team.robots.some((x) => x.id === r.id);
+        const mapBtn = (kind: DeviceMapKind, label: string) => {
+          const n = r[kind]?.length ?? 0;
+          return h(
+            'button',
+            { class: 'chip-btn', type: 'button', 'data-testid': `open-map-${kind}`, 'data-robot': r.id, onclick: () => renderMapPanel(panel, app, r.id, kind, () => renderTeamPanel(panel, app, close)) },
+            icon(kind === 'ports' ? 'table' : 'flag'),
+            n > 0 ? `${label} (${n === 1 ? '1 versión' : `${n} versiones`})` : label,
+          );
+        };
         return h(
           'div',
           { class: 'robot' },
           h('div', { class: 'form-row' }, h('label', { class: 'form-label', for: nId, text: 'Robot' }), n),
           h('div', { class: 'form-row' }, h('label', { class: 'form-label', for: sId, text: 'Subsistemas' }), h('div', {}, subs, h('p', { class: 'muted small', text: 'Separados por coma' }))),
+          saved ? h('div', { class: 'row wrap' }, mapBtn('ports', 'Mapa de puertos'), mapBtn('controller', 'Mapa del control')) : h('p', { class: 'muted small', text: 'Guarda los robots para llenar sus mapas.' }),
         );
       }),
     );

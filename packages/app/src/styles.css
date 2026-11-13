@@ -350,6 +350,12 @@ body:has(dialog[open]) { overflow: hidden; }
 /* Cierre */
 .q { display: block; }
 
+/* Mapas de puertos y del control (computadora) */
+.map-form { display: grid; grid-template-columns: 1fr; gap: 6px; background: var(--surface); border-radius: var(--radius); padding: 12px 14px; }
+.map-form .form-row { grid-template-columns: 150px minmax(0, 1fr); }
+.map-old summary { min-height: 48px; }
+.map-list { margin: 0; padding: 4px 14px 12px 30px; font-size: 14px; }
+
 /* Ruta del autónomo sobre el campo */
 .field-crop { position: relative; width: 100%; aspect-ratio: 1; overflow: hidden; background: #fff; border-radius: 8px; }
 .field-crop img { position: absolute; max-width: none; height: auto; pointer-events: none; -webkit-user-drag: none; user-select: none; }

@@ -225,6 +225,14 @@ try {
     body: JSON.stringify({ memberId: 'carla', checkIn: new Date(Date.now() - 86_400_000).toISOString() }),
   });
   assert(att.ok, 'asistencia de ayer registrada');
+  // Y hace tres días, también sin cierre (solo se recuerda la más reciente en el celular; la computadora marca las dos).
+  const THREE_AGO = mxDate(-3);
+  const att3 = await fetch(backend.deskBase + apiPath.attendance(THREE_AGO), {
+    method: 'POST',
+    headers: { 'x-team-key': backend.captureKey, 'content-type': 'application/json' },
+    body: JSON.stringify({ memberId: 'beto', checkIn: new Date(Date.now() - 3 * 86_400_000).toISOString() }),
+  });
+  assert(att3.ok, 'asistencia de hace tres días registrada');
 
   // --- Teléfono A ---------------------------------------------------------------
   const ctxA = await browser.newContext(phone);
@@ -637,6 +645,29 @@ try {
   await d.waitForSelector('.desk .card');
   assert(!hasKey(d.url()), `la clave de edición se quita de la barra de direcciones (${d.url()})`);
   await shot(d, '08-escritorio');
+  // Indicador de sesión sin cierre (hace tres días) en la computadora.
+  await d.locator('.side-item', { hasText: 'sin cierre' }).first().click();
+  await d.waitForSelector('[data-testid=desk-no-closing]');
+  await shotBoth(d, '31-escritorio-sin-cierre', false);
+  await d.locator('.side-item').first().click();
+  log('PC: la sesión de hace tres días se marca "sin cierre"');
+
+  // Mapas de puertos y del control del Robot A (computadora), con historial.
+  const fillMap = async (kind: 'ports' | 'controller', values: Record<string, string>) => {
+    await d.click('[data-testid=open-team]');
+    await d.click(`[data-testid=open-map-${kind}][data-robot=robot-a]`);
+    for (const [slot, v] of Object.entries(values)) await d.fill(`[data-testid=map-form-${kind}] [data-slot="${slot}"]`, v);
+    await shotBoth(d, `32-mapa-${kind}`, false);
+    await d.click('[data-testid=map-save]');
+    await d.waitForSelector(`[data-testid=open-map-${kind}][data-robot=robot-a]`);
+  };
+  await fillMap('ports', { '1': 'Motor izq. delantero', '2': 'Motor izq. trasero', '11': 'Motor der. delantero', '21': 'Radio', A: 'Pistón del intake' });
+  await fillMap('controller', { L1: 'Intake adentro', R2: 'Disparar', axis3: 'Avanzar / retroceder', X: 'Cambiar modo' });
+  await d.click('[data-testid=team-close]');
+  const teamNow = (await (await fetch(backend.deskBase + apiPath.state(), { headers: { 'x-team-key': backend.editKey } })).json()) as StateResponse;
+  const ra = teamNow.team.robots.find((r) => r.id === 'robot-a');
+  assert(ra?.ports?.[0]?.slots['21'] === 'Radio' && ra.controller?.[0]?.slots.L1 === 'Intake adentro', 'los mapas llegan al equipo en el servidor');
+  log('PC: mapa de puertos y del control del Robot A guardados');
   const [download] = await Promise.all([d.waitForEvent('download', { timeout: 120_000 }), d.click('[data-testid=generate]')]);
   const pptx = join(OUT, 'bitacora-e2e.pptx');
   await download.saveAs(pptx);
@@ -658,6 +689,12 @@ try {
   assert(tour && tour.includes('PARTIDOS') && tour.includes('Q13') && tour.includes('Se salió la cadena del intake'), 'la página de registro de torneo trae los partidos');
   assert(slides.some((x) => x.includes('Subimos la tensión de la cadena') && x.includes('Registro de cambios')), 'lo que se ajustó en el torneo llega al registro de cambios');
   assert(slides.some((x) => x.includes('Lluvia de ideas') && x.includes('<p:pic>')), 'el boceto llega a la lluvia de ideas');
+  // (La tabla de contenido también trae los títulos: se busca la página por su contenido.)
+  assert(slides.some((x) => x.includes('Mapa de puertos del Brain: Robot A') && x.includes('Pistón del intake') && x.includes('Radio')), 'el mapa de puertos sale lleno');
+  assert(slides.some((x) => x.includes('Mapa del control: Robot A') && x.includes('Avanzar / retroceder')), 'el mapa del control sale lleno');
+  const monthTitle = new Date().toLocaleDateString('es-MX', { month: 'long', year: 'numeric', timeZone: 'America/Mexico_City' }).replace(/ de /, ' ');
+  const monthCap = monthTitle.charAt(0).toUpperCase() + monthTitle.slice(1);
+  assert(slides.some((x) => x.includes(`<a:t>${monthCap}</a:t>`) && x.includes('Taller (')), `el calendario de ${monthCap} sale con las sesiones`);
   const auton = slideWith('Tomar el objeto del centro');
   assert(auton && auton.includes('<a:srcRect') && (auton.match(/prst="ellipse"/g) ?? []).length === 3 && (auton.match(/straightConnector1/g) ?? []).length === 2, 'la ruta sale sobre el mapa del campo con puntos y flechas, y la tabla de pasos llena');
   log(`PC: en el .pptx están la foto anotada (formas), el registro de torneo, el ajuste en el registro de cambios y el boceto (${slides.length} diapositivas)`);

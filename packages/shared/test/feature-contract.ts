@@ -79,6 +79,22 @@ export function featureContract(ctx: () => ContractCtx): void {
     expect((await put(apiPath.entry(e.id), { ...e, elements: [{ id: 'r', type: 'route', points: [{ id: 'p', x: -1, y: 0 }] }] })).status).toBe(400);
   });
 
+  it('equipo con mapas de puertos y del control (historial): se guarda tal cual; uno dañado se rechaza', async () => {
+    const st = await state();
+    const team = {
+      ...st.team,
+      robots: [
+        ...st.team.robots.filter((r) => r.id !== 'robot-mapas'),
+        { id: 'robot-mapas', name: 'Robot Mapas', subsystems: [], ports: [{ date: '2026-10-01', savedAt: '2026-10-01T18:00:00.000Z', slots: { '1': 'Motor' } }, { date: '2026-10-08', savedAt: '2026-10-08T18:00:00.000Z', by: 'ana', slots: { '1': 'Motor', A: 'Pistón' } }], controller: [{ date: '2026-10-03', savedAt: '2026-10-03T18:00:00.000Z', slots: { L1: 'Intake' } }] },
+      ],
+    };
+    const r = await ctx().editCall(apiPath.team(), { method: 'PUT', body: JSON.stringify(team) });
+    expect(r.status).toBe(200);
+    expect((await state()).team.robots.find((x) => x.id === 'robot-mapas')).toEqual(team.robots[team.robots.length - 1]);
+    const bad = { ...team, robots: [{ id: 'robot-mapas', name: 'Robot Mapas', subsystems: [], ports: [{ date: 'x', slots: {} }] }] };
+    expect((await ctx().editCall(apiPath.team(), { method: 'PUT', body: JSON.stringify(bad) })).status).toBe(400);
+  });
+
   it('una entrada en el formato anterior (sin campos nuevos) se sigue aceptando igual', async () => {
     const e = entry({ id: 'vieja1', elements: [{ id: 'p', type: 'photo', photoId: 'foto-b', caption: 'Intake' }, { id: 't', type: 'text', text: 'antes' }] });
     expect((await put(apiPath.entry(e.id), e)).status).toBe(200);

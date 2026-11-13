@@ -105,7 +105,7 @@ export function entryCard(app: App, e: Entry, onOpen: (id: string) => void, vari
       'div',
       { class: 'card-body' },
       h('div', { class: 'card-top' }, h('span', { class: 'time', text: timeOf(e.createdAt) }), statusPill(app, e, true)),
-      summary ? h('div', { class: 'summary', text: summary }) : h('div', { class: 'summary muted', text: photos.length > 0 ? (photos.length === 1 ? 'Foto' : `${photos.length} fotos`) : 'Vacía' }),
+      summary ? h('div', { class: 'summary', text: summary }) : h('div', { class: 'summary muted', text: photos.length > 0 ? (photos.every((p) => p.type === 'photo' && p.sketch) ? 'Boceto' : photos.length === 1 ? 'Foto' : `${photos.length} fotos`) : 'Vacía' }),
       chips.length > 0 ? h('div', { class: 'tags' }, chips) : null,
       authors ? h('div', { class: 'authors muted', text: authors }) : null,
     ),
