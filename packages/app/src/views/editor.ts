@@ -365,8 +365,18 @@ export function renderEditor(root: HTMLElement, app: App, id: string, onDone: ()
           else delete el.alliance;
         }, 'match-alliance'),
       ),
-      h('div', { class: 'match-row' }, text('partner', 'Equipo aliado', 'Equipo aliado'), text('opponents', 'Rivales', 'Equipos rivales')),
-      h('div', { class: 'match-row score' }, h('span', { class: 'field-label', text: 'Marcador' }), text('ourScore', 'Nosotros', 'Puntos de nuestra alianza', true), h('span', { class: 'muted', text: '–' }), text('theirScore', 'Ellos', 'Puntos de la otra alianza', true)),
+      h(
+        'div',
+        { class: 'match-row' },
+        h('label', { class: 'q' }, h('span', { class: 'field-label', text: 'Aliado' }), text('partner', 'Equipo', 'Equipo aliado')),
+        h('label', { class: 'q' }, h('span', { class: 'field-label', text: 'Rivales' }), text('opponents', 'Equipos', 'Equipos rivales')),
+      ),
+      h(
+        'div',
+        { class: 'stack-tight' },
+        h('span', { class: 'field-label', text: 'Marcador (nosotros – ellos)' }),
+        h('div', { class: 'match-row score' }, text('ourScore', 'Nosotros', 'Puntos de nuestra alianza', true), h('span', { class: 'muted', text: '–' }), text('theirScore', 'Ellos', 'Puntos de la otra alianza', true)),
+      ),
       segs,
       long('failed', '¿Qué falló en este partido?', 'Qué falló'),
       long('adjusted', '¿Qué ajustamos antes del siguiente?', 'Qué ajustamos'),

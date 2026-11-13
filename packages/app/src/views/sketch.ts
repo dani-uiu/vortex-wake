@@ -14,8 +14,8 @@ const COLORS: [string, string][] = [
   ['#1f5fbf', 'Azul'],
 ];
 const WIDTHS: [number, string][] = [
-  [5, 'Fino'],
-  [14, 'Grueso'],
+  [8, 'Fino'],
+  [22, 'Grueso'],
 ];
 
 interface Stroke {

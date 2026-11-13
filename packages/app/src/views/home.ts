@@ -139,8 +139,10 @@ export function renderHome(root: HTMLElement, app: App, go: (hash: string) => vo
           )
         : null,
     );
-    // Los pendientes no se repintan mientras se escribe o se usa uno (por si llega algo del servidor).
-    if (!tasksSlot.contains(document.activeElement)) setChildren(tasksSlot, tasksBlock(app));
+    // Se conserva el foco en el pendiente que se acaba de marcar (teclado y lector de pantalla).
+    const focused = (document.activeElement as HTMLElement | null)?.closest<HTMLElement>('[data-task]')?.dataset.task;
+    setChildren(tasksSlot, tasksBlock(app));
+    if (focused) tasksSlot.querySelector<HTMLElement>(`[data-task="${CSS.escape(focused)}"] .task-check`)?.focus();
 
     const all = app.liveEntries(today);
     const todo = all.filter(isUnclassified);

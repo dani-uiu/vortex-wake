@@ -25,7 +25,8 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium, type BrowserContext, type Page } from 'playwright-core';
-import { TEAM_FORMAT, apiPath, type CaptureSession, type Entry, type StateResponse, type TeamConfig } from '@vortex-wake/shared';
+import { TEAM_FORMAT, apiPath, type CaptureSession, type Entry, type StateResponse, type TaskItem, type TeamConfig } from '@vortex-wake/shared';
+import { strFromU8, unzipSync } from 'fflate';
 import { lanAddresses, startServer, type RunningServer } from '../../dev-server/src/server.ts';
 import { buildAssets } from '../../worker/scripts/build.ts';
 import { startLocalWorker, type LocalWorker } from '../../worker/scripts/harness.ts';
@@ -69,6 +70,7 @@ interface Backend {
   deskLink(): string;
   entries(): Promise<Entry[]>;
   sessions(): Promise<CaptureSession[]>;
+  tasks(): Promise<TaskItem[]>;
   photoIds(): Promise<string[]>;
   photo(id: string): Promise<Uint8Array>;
   /** Simula que el servidor se cae y vuelve. */
@@ -112,6 +114,7 @@ async function devServerBackend(): Promise<Backend> {
     deskLink: () => `http://localhost:${port}/?k=${KEY}#/escritorio`,
     entries: async () => [...server.store.entries.values()],
     sessions: async () => [...server.store.sessions.values()],
+    tasks: async () => [...server.store.tasks.values()],
     photoIds: async () => {
       try {
         return readdirSync(photosDir).filter((f) => f.endsWith('.jpg')).map((f) => f.slice(0, -4));
@@ -155,6 +158,7 @@ async function workerBackend(): Promise<{ backend: Backend; worker: LocalWorker 
       deskLink: () => `${base}/#/escritorio?k=${worker.editKey}`,
       entries: async () => (await state()).entries,
       sessions: async () => (await state()).sessions,
+      tasks: async () => (await state()).tasks ?? [],
       photoIds: async () => (await env.PHOTOS.list({ prefix: 'photos/' })).objects.map((o) => o.key.slice('photos/'.length, -'.jpg'.length)),
       photo: async (id) => new Uint8Array(await (await fetch(`${base}${apiPath.photo(id)}?k=${worker.captureKey}`)).arrayBuffer()),
       down: block,
@@ -184,11 +188,44 @@ const watch = (p: Page, who: string) => {
   });
 };
 const shot = (p: Page, name: string) => p.screenshot({ path: join(SHOTS, `${name}.png`), fullPage: true });
+/** Captura en modo claro y oscuro (funciones nuevas). Las hojas de pantalla completa no se recortan con fullPage. */
+const shotBoth = async (p: Page, name: string, fullPage = true) => {
+  await p.emulateMedia({ colorScheme: 'light' });
+  await p.screenshot({ path: join(SHOTS, `${name}-claro.png`), fullPage });
+  await p.emulateMedia({ colorScheme: 'dark' });
+  await p.screenshot({ path: join(SHOTS, `${name}-oscuro.png`), fullPage });
+  await p.emulateMedia({ colorScheme: null });
+};
+/** Arrastra sobre un elemento en coordenadas relativas (0 a 1). */
+const dragOn = async (p: Page, selector: string, from: [number, number], to: [number, number]) => {
+  const box = await p.locator(selector).boundingBox();
+  if (!box) throw new Error(`no se ve ${selector}`);
+  await p.mouse.move(box.x + from[0] * box.width, box.y + from[1] * box.height);
+  await p.mouse.down();
+  await p.mouse.move(box.x + to[0] * box.width, box.y + to[1] * box.height, { steps: 8 });
+  await p.mouse.up();
+};
+const tapOn = async (p: Page, selector: string, at: [number, number]) => {
+  const box = await p.locator(selector).boundingBox();
+  if (!box) throw new Error(`no se ve ${selector}`);
+  await p.mouse.click(box.x + at[0] * box.width, box.y + at[1] * box.height);
+};
+/** Fecha local del taller (los teléfonos de la prueba están en la Ciudad de México). */
+const mxDate = (offsetDays = 0) => new Date(Date.now() + offsetDays * 86_400_000).toLocaleDateString('en-CA', { timeZone: 'America/Mexico_City' });
 
 const liveEntries = async () => (await backend.entries()).filter((e) => !e.deleted);
 const hasKey = (url: string) => url.includes(backend.captureKey) || url.includes(backend.editKey);
 
 try {
+  // Ayer hubo taller y nadie llenó el cierre (asistencia registrada directo en el servidor).
+  const YESTERDAY = mxDate(-1);
+  const att = await fetch(backend.deskBase + apiPath.attendance(YESTERDAY), {
+    method: 'POST',
+    headers: { 'x-team-key': backend.captureKey, 'content-type': 'application/json' },
+    body: JSON.stringify({ memberId: 'carla', checkIn: new Date(Date.now() - 86_400_000).toISOString() }),
+  });
+  assert(att.ok, 'asistencia de ayer registrada');
+
   // --- Teléfono A ---------------------------------------------------------------
   const ctxA = await browser.newContext(phone);
   let a = await ctxA.newPage();
@@ -203,6 +240,26 @@ try {
   await until('asistencia de Ana en el servidor', async () => (await backend.sessions()).some((s) => s.attendance.some((x) => x.memberId === 'ana')));
   log('A: eligió su nombre y quedó su asistencia');
 
+  // --- Recordatorio de cierre y pendientes ----------------------------------------------
+  await a.waitForSelector('[data-testid=closing-nudge]');
+  assert(((await a.textContent('[data-testid=closing-nudge]')) ?? '').includes('quedó sin cierre'), 'avisa que la sesión de ayer quedó sin cierre');
+  assert((await a.getAttribute('[data-testid=closing-nudge]', 'data-date')) === YESTERDAY, 'el aviso es de la sesión de ayer');
+  await shotBoth(a, '20-aviso-sin-cierre');
+  await a.click('[data-testid=closing-nudge-go]');
+  await a.waitForSelector('[data-testid=closing-next]');
+  await a.fill('[data-testid=closing-did]', 'Armamos el intake');
+  await a.fill('[data-testid=closing-next]', 'Revisar la batería\nCambiar el engrane del brazo');
+  await a.click('[data-testid=closing-save]');
+  await a.waitForSelector('[data-testid=tasks]');
+  await until('el cierre de ayer llega al servidor', async () => (await backend.sessions()).some((s) => s.date === YESTERDAY && s.closing?.whatsNext?.includes('batería')));
+  assert((await a.locator('[data-testid=closing-nudge]').count()) === 0, 'con el cierre lleno ya no hay aviso');
+  assert((await a.locator('[data-testid=tasks] .task').count()) === 2, 'los dos renglones de "¿Qué sigue?" son pendientes');
+  await shotBoth(a, '21-pendientes');
+  await a.locator('[data-testid=tasks] .task', { hasText: 'Revisar la batería' }).locator('.task-check').click();
+  await until('pendiente hecho (quién y cuándo) en el servidor', async () => (await backend.tasks()).some((t) => t.text === 'Revisar la batería' && t.done?.by === 'ana'));
+  assert(((await a.textContent('[data-testid=tasks]')) ?? '').includes('Hecho por Ana'), 'el pendiente hecho dice quién lo hizo');
+  log('A: aviso de la sesión de ayer sin cierre → cierre → pendientes; uno marcado como hecho');
+
   // Foto primero: un toque y queda guardada.
   await a.setInputFiles('[data-testid=photo-input]', PHOTO);
   await a.waitForSelector('.card [data-status]');
@@ -214,11 +271,46 @@ try {
   // La foto sin clasificar se abre desde la lista y queda "Sin clasificar" hasta que alguien la clasifique.
   assert((await a.locator('.card .tag.todo').count()) === 1, 'la foto queda "Sin clasificar"');
 
+  // --- Anotar la foto: etiqueta con flecha, etiqueta sola y flecha suelta --------------------
+  await a.locator('.card', { has: a.locator('.thumb img') }).first().click();
+  await a.click('[data-testid=annotate-photo]');
+  const canvas = '[data-testid=annotator-canvas]';
+  await until('el anotador muestra la foto', () => a.locator(canvas).evaluate((s) => !!s.getAttribute('viewBox')));
+  await dragOn(a, canvas, [0.5, 0.55], [0.2, 0.2]);
+  await tapOn(a, canvas, [0.82, 0.25]);
+  await a.click('[data-testid=ann-mode-arrow]');
+  await dragOn(a, canvas, [0.12, 0.88], [0.38, 0.68]);
+  const lbl = (letter: string, field: string) => `[data-testid=annotator-labels] .ann-label[data-letter=${letter}] [data-field=${field}]`;
+  await a.fill(lbl('A', 'what'), 'Rodillo de entrada');
+  await a.fill(lbl('A', 'does'), 'Jala los anillos hacia adentro');
+  await a.fill(lbl('A', 'why'), 'Agarra desde el piso sin alinear');
+  await a.fill(lbl('B', 'what'), 'Motor del intake');
+  await shotBoth(a, '22-anotador', false);
+  await a.click('[data-testid=annotator-done]');
+  await a.click('[data-testid=more-details] summary');
+  await a.click('[data-testid=kind] [data-value=mechanism]');
+  await a.click('[data-testid=section] [data-value=mechanics]');
+  await a.evaluate(() => scrollTo(0, 0));
+  await shotBoth(a, '23-editor-foto-anotada');
+  await a.click('[data-testid=editor-done]');
+  await a.waitForSelector('[data-testid=entry-list]');
+  await until('foto anotada (2 etiquetas, 1 flecha) en el servidor', async () =>
+    (await liveEntries()).find((e) => {
+      const p = e.elements.find((x) => x.type === 'photo');
+      const ann = p && p.type === 'photo' ? p.annotations ?? [] : [];
+      return e.kind === 'mechanism' && ann.filter((x) => x.type === 'label').length === 2 && ann.filter((x) => x.type === 'arrow').length === 1 && ann.some((x) => x.type === 'label' && x.what === 'Rodillo de entrada' && x.tx !== undefined);
+    }),
+  );
+  assert((await a.locator('.card .marked[data-marks="3"]').count()) === 1, 'la lista muestra la foto con sus anotaciones');
+  await shotBoth(a, '24-lista-foto-anotada');
+  log('A: foto anotada (A con flecha, B, flecha suelta) con sus textos, clasificada como mecanismo');
+
   // Nota con clasificación: "¿De qué es?" → "¿Qué fue?" (se abre sola) → "Más detalles".
   await a.click('[data-testid=new-text]');
   await a.waitForSelector('[data-testid=text-input]');
   await a.fill('[data-testid=text-input]', 'Armamos el chasis y tensamos la cadena del lado izquierdo.');
-  assert((await a.locator('[data-testid=same-as-before]').count()) === 0, 'sin clasificación anterior no se propone "Igual que la anterior"');
+  // Lo último que Ana clasificó fue la foto anotada (mecanismo): se propone, sin aplicarse.
+  assert(((await a.textContent('[data-testid=same-as-before]')) ?? '').includes('Construimos'), 'propone "Igual que la anterior" con la clasificación de la foto anotada');
   await a.click('[data-testid=class-target]');
   await a.click('[data-testid=sheet-target] [data-robot=robot-a] [data-value="robot-a|chasis"]');
   await a.click('[data-testid=sheet-what] [data-value=build]');
@@ -317,6 +409,26 @@ try {
   await until('entrada con el servidor caído llega al volver', async () => (await liveEntries()).some((e) => e.elements.some((x) => x.type === 'text' && x.text === 'Con la laptop apagada')), 30_000);
   log('A: con el servidor caído se guardó en el teléfono y se envió al volver');
 
+  // --- Boceto con el dedo --------------------------------------------------------------
+  await a.click('[data-testid=more-actions]');
+  await a.click('[data-testid=sheet-more] [data-testid=new-sketch]');
+  await a.waitForSelector('[data-testid=sketch-canvas]');
+  await dragOn(a, '[data-testid=sketch-canvas]', [0.15, 0.7], [0.5, 0.25]);
+  await dragOn(a, '[data-testid=sketch-canvas]', [0.5, 0.25], [0.85, 0.7]);
+  await a.click('[data-testid=sketch-color-rojo]');
+  await a.click('[data-testid=sketch-width-grueso]');
+  await dragOn(a, '[data-testid=sketch-canvas]', [0.2, 0.85], [0.8, 0.85]);
+  await dragOn(a, '[data-testid=sketch-canvas]', [0.1, 0.1], [0.3, 0.1]);
+  await a.click('[data-testid=sketch-undo]');
+  await shotBoth(a, '25-boceto', false);
+  const photosBefore = (await backend.photoIds()).length;
+  await a.click('[data-testid=sketch-save]');
+  await until('boceto en el servidor (lluvia de ideas, foto marcada como boceto)', async () =>
+    (await liveEntries()).find((e) => e.kind === 'brainstorm' && e.elements.some((x) => x.type === 'photo' && x.sketch === true)),
+  );
+  await until('la imagen del boceto llega', async () => (await backend.photoIds()).length === photosBefore + 1);
+  log('A: boceto dibujado (dos colores, deshacer) y guardado como imagen en una lluvia de ideas');
+
   // --- Teléfono B (misma sesión) --------------------------------------------------
   const ctxB = await browser.newContext({ ...phone, colorScheme: 'dark' });
   const b = await ctxB.newPage();
@@ -333,6 +445,34 @@ try {
   await b.click('[data-testid=sheet-what] [data-value=code]');
   await b.click('[data-testid=editor-done]');
   await until('"Programamos" llega como Código · Programación', async () => (await liveEntries()).find((e) => e.kind === 'codeDoc' && e.section === 'coding' && e.capturedBy === 'beto'));
+  // --- Modo torneo: un partido y el siguiente ---------------------------------------------
+  await b.click('[data-testid=more-actions]');
+  await b.click('[data-testid=sheet-more] [data-testid=new-match]');
+  await b.waitForSelector('.match');
+  await b.fill('.match [data-field=match]', 'Q12');
+  await b.click('[data-testid=match-alliance] [data-value=red]');
+  await b.fill('.match [data-field=partner]', '1234B');
+  await b.fill('.match [data-field=opponents]', '5678A, 9012C');
+  await b.fill('.match [data-field=ourScore]', '40');
+  await b.fill('.match [data-field=theirScore]', '52');
+  assert((await b.getAttribute('[data-testid=match-result] [data-value=loss]', 'aria-pressed')) === 'true', 'con el marcador, el resultado se pone solo (Perdimos)');
+  await b.fill('[data-testid=match-failed]', 'Se salió la cadena del intake');
+  await b.fill('[data-testid=match-adjusted]', 'Subimos la tensión de la cadena');
+  await b.click('[data-testid=match-change] [data-value=mechanics]');
+  await b.evaluate(() => scrollTo(0, 0));
+  await shotBoth(b, '26-partido');
+  await b.click('[data-testid=next-match]');
+  await until('se abre otro partido vacío', async () => (await b.inputValue('.match [data-field=match]').catch(() => 'x')) === '');
+  await b.fill('.match [data-field=match]', 'Q13');
+  await b.click('[data-testid=match-alliance] [data-value=blue]');
+  await b.click('[data-testid=editor-done]');
+  await until('dos partidos en el servidor, uno con el ajuste para Mecánica', async () => {
+    const ms = (await liveEntries()).filter((e) => e.kind === 'tournamentLog' && e.section === 'strategy');
+    const els = ms.flatMap((e) => e.elements.filter((x) => x.type === 'match'));
+    return ms.length === 2 && els.some((x) => x.type === 'match' && x.match === 'Q12' && x.result === 'loss' && x.adjustedSection === 'mechanics') && els.some((x) => x.type === 'match' && x.match === 'Q13' && x.alliance === 'blue');
+  });
+  log('B: modo torneo, dos partidos (uno con lo que se ajustó para el registro de cambios)');
+
   // B edita una entrada de A (la foto sin clasificar).
   await b.click('[data-testid=filter-todo]');
   await b.locator('.card', { hasText: 'Capturado sin señal' }).click();
@@ -356,6 +496,34 @@ try {
   await b.click('[data-testid=closing-save]');
   await until('cierre en el servidor', async () => (await backend.sessions()).some((s) => s.closing?.whatWeDid === 'Chasis y autónomo'));
   log('B: cierre de sesión guardado');
+  await until('el pendiente "Probar el intake" llega al servidor', async () => (await backend.tasks()).some((t) => t.text === 'Probar el intake' && t.source === 'closing'));
+
+  // --- Al día siguiente: los pendientes pasan a la sesión nueva ----------------------------
+  const ctxC = await browser.newContext(phone);
+  const c = await ctxC.newPage();
+  await c.clock.install({ time: new Date(Date.now() + 86_400_000) });
+  watch(c, 'C');
+  await c.goto(backend.captureLink());
+  await c.waitForSelector('[data-testid=who-select]');
+  await c.selectOption('[data-testid=who-select]', 'dario');
+  await c.click('[data-testid=who-enter]');
+  await c.waitForSelector('[data-testid=tasks]');
+  await until('mañana se ven los pendientes de hoy y los de ayer que no se hicieron', async () => {
+    const t = (await c.textContent('[data-testid=tasks]')) ?? '';
+    return t.includes('Probar el intake') && t.includes('Cambiar el engrane del brazo') && !t.includes('Revisar la batería');
+  });
+  assert((await c.locator('[data-testid=closing-nudge]').count()) === 0, 'la sesión de hoy sí tiene cierre: no hay aviso');
+  await shotBoth(c, '27-pendientes-dia-siguiente');
+  await c.locator('[data-testid=tasks] .task', { hasText: 'Cambiar el engrane' }).locator('.task-text').click();
+  await c.click('[data-testid=task-snooze]');
+  await until('pendiente pospuesto en el servidor', async () => (await backend.tasks()).some((t) => t.text === 'Cambiar el engrane del brazo' && !!t.snoozedUntil && !t.done));
+  await c.click('[data-testid=more-actions]');
+  await c.click('[data-testid=sheet-more] [data-testid=new-task]');
+  await c.fill('[data-testid=task-text]', 'Imprimir la pieza del brazo');
+  await c.click('[data-testid=task-save]');
+  await until('pendiente agregado a mano en el servidor', async () => (await backend.tasks()).some((t) => t.text === 'Imprimir la pieza del brazo' && t.source === 'manual' && t.createdBy === 'dario'));
+  await ctxC.close();
+  log('C (día siguiente): ve los pendientes que quedaron, pospone uno y agrega otro a mano');
 
   if (NUBE) {
     // Con la clave de captura no se entra a la vista de computadora ni al QR.
@@ -384,6 +552,21 @@ try {
   await shot(d, '09-escritorio-generado');
   const bytes = readFileSync(pptx);
   assert(bytes[0] === 0x50 && bytes[1] === 0x4b && bytes.length > 100_000, 'el .pptx es un zip de buen tamaño');
+  // Lo nuevo dentro del .pptx: las diapositivas se llaman slide1.xml… en orden.
+  const zip = unzipSync(new Uint8Array(bytes));
+  const slides = Object.keys(zip)
+    .filter((n) => /^ppt\/slides\/slide\d+\.xml$/.test(n))
+    .sort((x, y) => Number(/\d+/.exec(x)?.[0]) - Number(/\d+/.exec(y)?.[0]))
+    .map((n) => strFromU8(zip[n] as Uint8Array));
+  const slideWith = (s: string) => slides.find((x) => x.includes(s));
+  const mech = slideWith('A: Rodillo de entrada');
+  assert(mech && mech.includes('<p:grpSp>') && (mech.match(/straightConnector1/g) ?? []).length === 2 && (mech.match(/prst="ellipse"/g) ?? []).length === 2, 'la foto anotada sale con flechas y etiquetas como formas, y la tabla de etiquetas llena');
+  assert(mech.includes('Jala los anillos hacia adentro') && mech.includes('Motor del intake'), 'la tabla de etiquetas trae qué hace y por qué');
+  const tour = slides.find((x) => x.includes('Registro de torneo') && x.includes('Q12'));
+  assert(tour && tour.includes('PARTIDOS') && tour.includes('Q13') && tour.includes('Se salió la cadena del intake'), 'la página de registro de torneo trae los partidos');
+  assert(slides.some((x) => x.includes('Subimos la tensión de la cadena') && x.includes('Registro de cambios')), 'lo que se ajustó en el torneo llega al registro de cambios');
+  assert(slides.some((x) => x.includes('Lluvia de ideas') && x.includes('<p:pic>')), 'el boceto llega a la lluvia de ideas');
+  log(`PC: en el .pptx están la foto anotada (formas), el registro de torneo, el ajuste en el registro de cambios y el boceto (${slides.length} diapositivas)`);
   log(`PC: bitácora generada en el navegador (${(bytes.length / 1024).toFixed(0)} KB): ${await d.textContent('[data-testid=generate-report]')}`);
   await d.locator('.desk .card').first().click();
   await d.waitForSelector('.panel [data-testid=marks]');

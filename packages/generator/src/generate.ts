@@ -115,7 +115,7 @@ export async function generateNotebook(params: {
   const style = map.standard;
   const bottomLimit = map.contentBottomPt;
   const physical: PhysicalPage[] = [];
-  const titleCache = new Map<number, string>();
+  const titleCache = new Map<string, string>();
   for (const lp of logical) {
     switch (lp.kind) {
       case 'cover':
@@ -138,8 +138,9 @@ export async function generateNotebook(params: {
         const mapping = map.pageTypes[lp.type];
         const slideDoc = template.pkg.getXml(model.part);
         const geom = readModelGeometry(slideDoc.documentElement as unknown as Element, mapping.fields, bottomLimit);
-        if (!titleCache.has(model.index)) titleCache.set(model.index, readTitle(slideDoc.documentElement as unknown as Element, map));
-        const title = buildTitle(titleCache.get(model.index) ?? '', lp);
+        // Por parte, no por posición: las páginas armadas (trabajo del día, torneo) comparten la página en blanco.
+        if (!titleCache.has(model.part)) titleCache.set(model.part, readTitle(slideDoc.documentElement as unknown as Element, map));
+        const title = buildTitle(titleCache.get(model.part) ?? '', lp);
         let fields = lp.fields;
         let continuation = false;
         for (let i = 0; i <= MAX_CONTINUATIONS; i++) {

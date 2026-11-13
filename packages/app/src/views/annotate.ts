@@ -178,14 +178,6 @@ export function openAnnotator(opts: AnnotatorOptions): void {
       commit(before);
       return;
     }
-    if (selected && !d.moved) {
-      // Un toque fuera de todo primero quita la selección.
-      selected = undefined;
-      draw();
-      renderTools();
-      renderLabels();
-      return;
-    }
     const letter = nextLabelLetter([...opts.otherLetters(), ...list.filter((x): x is PhotoLabel => x.type === 'label').map((x) => x.letter)]);
     const l: PhotoLabel = d.moved
       ? { id: newId(), type: 'label', letter, x: round(d.x), y: round(d.y), tx: round(d.sx), ty: round(d.sy) }
@@ -262,7 +254,8 @@ export function openAnnotator(opts: AnnotatorOptions): void {
                 else delete l[k];
                 opts.onChange(structuredClone(list));
               });
-              return dictationFor(input);
+              // Etiqueta visible: el texto de ayuda desaparece al escribir.
+              return h('label', { class: 'ann-field' }, h('span', { class: 'ann-field-label', text: label }), dictationFor(input));
             }),
           ),
         ),

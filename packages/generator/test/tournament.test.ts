@@ -14,6 +14,8 @@ describe('registro de torneo', () => {
       const doc = minimalDocument({
         language: lang === 'ES' ? 'es' : 'en',
         pages: [
+          // Antes, una página de trabajo del día (también armada sobre la página en blanco): cada una con su título.
+          { id: 'd1', type: 'dailyWork', section: 'strategy', date: '2026-11-13', authors: ['a'], fields: { notes: 'Ruta nueva' } },
           {
             id: 't1',
             type: 'tournamentLog',
