@@ -261,6 +261,14 @@ function checkElement(el: unknown): string | undefined {
       return Array.isArray(el.trials) && el.trials.every((t) => isObj(t) && typeof t.ok === 'boolean' && isStr(t.at) && optStr(t.note))
         ? undefined
         : 'contador de pruebas inválido';
+    case 'match': {
+      const texts = [el.partner, el.opponents, el.ourScore, el.theirScore, el.failed, el.adjusted];
+      if (!isStr(el.match) || el.match.length > MAX_NAME_LENGTH || !texts.every(optNote)) return 'partido inválido';
+      if (el.alliance !== undefined && el.alliance !== 'red' && el.alliance !== 'blue') return 'alianza inválida';
+      if (el.result !== undefined && !['win', 'loss', 'tie'].includes(el.result as string)) return 'resultado inválido';
+      if (el.adjustedSection !== undefined && !['mechanics', 'coding', 'wiring'].includes(el.adjustedSection as string)) return 'sección del ajuste inválida';
+      return undefined;
+    }
     default:
       return `tipo de elemento desconocido: ${String(el.type)}`;
   }

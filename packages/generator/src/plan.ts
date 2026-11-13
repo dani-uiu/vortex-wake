@@ -225,8 +225,9 @@ function changeLogPage(doc: NotebookDocument, section: SectionId): ContentPage |
   if (!(PAGE_TYPES.changeLog.sections as readonly string[]).includes(section)) return undefined;
   const records: { date: string; row: string[]; authors: string[] }[] = [];
   for (const p of doc.pages) {
-    if (p.section !== section || !p.changes) continue;
+    if (!p.changes) continue;
     for (const c of p.changes) {
+      if ((c.section ?? p.section) !== section) continue;
       const date = c.date ?? p.date;
       const why = [c.test ? `{{page:${c.test}}}` : '', c.evidence ?? ''].filter((s) => s !== '').join(': ');
       records.push({ date, row: [formatDate(date, doc.language), c.change, why, c.result ?? ''], authors: p.authors });

@@ -157,9 +157,36 @@ export class Template {
     replaceText(title, () => base.title[language]);
     const fieldShapes = Object.values(mapping.fields);
     const bottom = this.map.contentBottomPt * EMU_PER_PT;
-    for (const f of fieldShapes) {
-      const el = copy(f.shape);
-      writeBox(el, { y: top, cy: bottom - top });
+    if (base.stack) {
+      // Campos apilados: encabezado (reescrito) y forma, cada uno con su parte del alto.
+      const GAP = 8 * EMU_PER_PT;
+      let y = top;
+      const avail = bottom - top - GAP * (base.stack.length - 1);
+      for (const part of base.stack) {
+        const f = mapping.fields[part.field];
+        if (!f) throw new TemplateError(`"${type}": el campo apilado "${part.field}" no está en el mapa`);
+        const shape = donorShapes.get(f.shape);
+        const head = f.heading ? donorShapes.get(f.heading) : undefined;
+        const headOffset = head && shape ? (readBox(shape)?.y ?? 0) - (readBox(head)?.y ?? 0) : 0;
+        const h = avail * part.share;
+        if (f.heading) {
+          const hd = copy(f.heading);
+          replaceText(hd, () => part.heading[language]);
+          writeBox(hd, { y });
+        }
+        const el = copy(f.shape);
+        writeBox(el, { y: y + headOffset, cy: h - headOffset });
+        const headers = base.tableHeaders?.[part.field]?.[language];
+        if (headers) rewriteTableHeader(el, headers);
+        const widths = base.columnWidthsPt?.[part.field];
+        if (widths) setColumnWidths(el, widths);
+        y += h + GAP;
+      }
+    } else {
+      for (const f of fieldShapes) {
+        const el = copy(f.shape);
+        writeBox(el, { y: top, cy: bottom - top });
+      }
     }
     const part = `ppt/slides/vw-${type}-${section}-${language}.xml`;
     this.pkg.setText(part, serializeXml(doc));
@@ -183,6 +210,26 @@ function replaceText(shape: Element, change: (current: string) => string): void 
   for (const r of runs.slice(1)) r.parentNode?.removeChild(r);
   const paras = descendants(shape, NS.a, 'p');
   for (const p of paras) if (p !== first.parentNode) p.parentNode?.removeChild(p);
+}
+
+/** Cambia el texto de cada celda del encabezado de una tabla (conservando su formato). */
+function rewriteTableHeader(frame: Element, headers: string[]): void {
+  const tbl = descendants(frame, NS.a, 'tbl')[0];
+  const tr = tbl ? children(tbl, NS.a, 'tr')[0] : undefined;
+  if (!tr) throw new TemplateError(`la forma "${shapeName(frame)}" no es una tabla`);
+  children(tr, NS.a, 'tc').forEach((tc, i) => {
+    const txBody = child(tc, NS.a, 'txBody');
+    if (txBody) replaceText(txBody, () => headers[i] ?? '');
+  });
+}
+
+/** Ancho de cada columna de una tabla, en puntos; el marco toma el ancho total. */
+function setColumnWidths(frame: Element, widthsPt: number[]): void {
+  const cols = descendants(frame, NS.a, 'gridCol');
+  cols.forEach((c, i) => {
+    const w = widthsPt[i];
+    if (w !== undefined) c.setAttribute('w', String(Math.round(w * EMU_PER_PT)));
+  });
 }
 
 export function matchesFingerprint(slide: TemplateSlide, fp: Fingerprint): boolean {

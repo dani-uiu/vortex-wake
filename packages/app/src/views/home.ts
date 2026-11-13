@@ -21,9 +21,20 @@ export function newElement(type: EntryElement['type']): EntryElement {
       return { id, type, header: ['', '', ''], rows: [['', '', '']] };
     case 'trials':
       return { id, type, trials: [] };
+    case 'match':
+      return { id, type, match: '' };
     case 'photo':
       throw new Error('las fotos se agregan con la cámara');
   }
+}
+
+/** Entrada nueva de un partido de torneo (Estrategia · Registro de torneo, marca "Torneo"). */
+export async function newMatch(app: App): Promise<string> {
+  const e = app.newEntry([newElement('match')]);
+  e.kind = 'tournamentLog';
+  e.section = 'strategy';
+  e.marks = ['tournament'];
+  return (await app.saveEntry(e)).id;
 }
 
 export function renderHome(root: HTMLElement, app: App, go: (hash: string) => void): () => void {
@@ -56,6 +67,7 @@ export function renderHome(root: HTMLElement, app: App, go: (hash: string) => vo
         item('new-link', 'link', 'Enlace', 'link'),
         item('new-list', 'list', 'Lista', 'list'),
         item('new-table', 'table', 'Tabla', 'table'),
+        h('button', { class: 'sheet-item', type: 'button', 'data-testid': 'new-match', onclick: () => (sheet.close(), void newMatch(app).then((id) => go(`#/entrada/${id}`))) }, icon('trophy'), h('span', { text: 'Partido de torneo' })),
         h('button', { class: 'sheet-item', type: 'button', 'data-testid': 'new-task', onclick: () => (sheet.close(), openAddTask(app)) }, icon('todo'), h('span', { text: 'Pendiente para otra sesión' })),
       ),
     );

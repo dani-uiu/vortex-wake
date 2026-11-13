@@ -105,6 +105,11 @@ export interface ChangeRecord {
   /** Datos de la prueba que motivó el cambio. */
   evidence?: string;
   result?: string;
+  /**
+   * Registro de cambios al que va, si no es el de la sección de la página
+   * (por ejemplo, un ajuste hecho en un torneo, que es de Estrategia).
+   */
+  section?: SectionId;
 }
 
 export interface CreditRecord {
@@ -256,6 +261,17 @@ export const PAGE_TYPES = {
     placement: 'section',
     sections: ['strategy'],
     fields: { path: area, steps: table(4), rationale: area, testResults: area },
+  },
+  /**
+   * Registro de torneo: una fila por partido (alianza, marcador, qué falló y
+   * qué se ajustó) y un recuadro de notas y fotos. La plantilla no la trae; el
+   * generador la arma sobre la página en blanco con la tabla de la página de
+   * análisis del juego.
+   */
+  tournamentLog: {
+    placement: 'section',
+    sections: ['strategy'],
+    fields: { matches: table(5), notes: area },
   },
   /**
    * Trabajo del día: lo capturado que todavía no tiene tipo de página. La

@@ -207,10 +207,12 @@ export function validateNotebook(input: unknown): ValidationResult {
       if (pg.changes !== undefined) {
         if (!Array.isArray(pg.changes)) add(`${p}.changes`, 'debe ser una lista');
         else if (spec.placement !== 'section') add(`${p}.changes`, 'solo las páginas de sección alimentan el registro de cambios');
-        else if (pg.section === 'strategy') add(`${p}.changes`, 'la plantilla no trae registro de cambios en Estrategia');
         else pg.changes.forEach((c, j) => {
           const cp = `${p}.changes[${j}]`;
           if (!isObject(c)) return add(cp, 'debe ser un objeto');
+          const logSections: readonly string[] = PAGE_TYPES.changeLog.sections;
+          if (c.section !== undefined && !logSections.includes(c.section as string)) add(`${cp}.section`, `debe ser una sección con registro de cambios (${logSections.join(', ')})`);
+          else if (c.section === undefined && !logSections.includes(pg.section as string)) add(`${p}.changes`, 'la plantilla no trae registro de cambios en Estrategia');
           if (c.date !== undefined && !isValidDate(c.date)) add(`${cp}.date`, 'fecha inválida (formato AAAA-MM-DD)');
           requireString(c, 'change', cp, add);
           optionalString(c, 'evidence', cp, add);

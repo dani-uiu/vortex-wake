@@ -30,7 +30,7 @@ export const WHAT_OPTIONS: WhatOption[] = [
   { id: 'problem', label: 'Algo falló', kind: 'problem', sections: ['mechanics', 'coding'] },
   { id: 'code', label: 'Programamos', kind: 'codeDoc', sections: ['coding'] },
   { id: 'wiring', label: 'Cableamos', kind: 'wiringDoc', sections: ['wiring'] },
-  { id: 'strategy', label: 'Estrategia o autónomo', kind: 'gameAnalysis', sections: ['strategy'], also: ['autonomousPlan'] },
+  { id: 'strategy', label: 'Estrategia o autónomo', kind: 'gameAnalysis', sections: ['strategy'], also: ['autonomousPlan', 'tournamentLog'] },
   { id: 'other', label: 'Otra cosa', kind: 'dailyWork', sections: ['mechanics', 'coding', 'wiring', 'strategy'], also: ['reflection'] },
 ];
 

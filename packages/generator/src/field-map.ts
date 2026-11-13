@@ -45,7 +45,20 @@ export interface PageTypeMapping {
    * blanco, copiando la etiqueta de sección, el título y las formas de los
    * campos de la página `donor` de la misma sección.
    */
-  base?: { donor: PageType; title: { es: string; en: string } };
+  base?: {
+    donor: PageType;
+    title: { es: string; en: string };
+    /**
+     * Varios campos apilados (con su encabezado, que se reescribe): cada uno
+     * ocupa `share` del alto disponible. Sin `stack`, un solo recuadro ocupa
+     * todo el alto.
+     */
+    stack?: { field: string; share: number; heading: { es: string; en: string } }[];
+    /** Encabezado de cada tabla, reescrito. */
+    tableHeaders?: Record<string, { es: string[]; en: string[] }>;
+    /** Ancho de cada columna (puntos). */
+    columnWidthsPt?: Record<string, number[]>;
+  };
 }
 
 export interface TocMapping {

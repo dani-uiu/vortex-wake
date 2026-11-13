@@ -65,6 +65,13 @@ export function featureContract(ctx: () => ContractCtx): void {
     expect((await state()).recentSessions).toBeUndefined();
   });
 
+  it('partido de torneo: se guarda y los inválidos se rechazan', async () => {
+    const e = entry({ id: 'partido1', kind: 'tournamentLog', section: 'strategy', marks: ['tournament'], elements: [{ id: 'm', type: 'match', match: 'Q12', alliance: 'blue', ourScore: '40', theirScore: '52', result: 'loss', adjusted: 'Más tensión', adjustedSection: 'mechanics' }] });
+    expect((await put(apiPath.entry(e.id), e)).status).toBe(200);
+    expect((await state()).entries.find((x) => x.id === 'partido1')).toEqual(e);
+    expect((await put(apiPath.entry(e.id), { ...e, elements: [{ id: 'm', type: 'match', match: 'Q12', result: 'quizá' }] })).status).toBe(400);
+  });
+
   it('una entrada en el formato anterior (sin campos nuevos) se sigue aceptando igual', async () => {
     const e = entry({ id: 'vieja1', elements: [{ id: 'p', type: 'photo', photoId: 'foto-b', caption: 'Intake' }, { id: 't', type: 'text', text: 'antes' }] });
     expect((await put(apiPath.entry(e.id), e)).status).toBe(200);

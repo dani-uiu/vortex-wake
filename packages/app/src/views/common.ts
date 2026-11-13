@@ -1,4 +1,4 @@
-import { ENTRY_KIND_LABELS, MARK_LABELS, SECTION_LABELS, isUnclassified, type Entry } from '@vortex-wake/shared';
+import { ENTRY_KIND_LABELS, MARK_LABELS, SECTION_LABELS, isUnclassified, matchRow, type Entry } from '@vortex-wake/shared';
 import type { App } from '../app.ts';
 import { targetLabel } from '../classify.ts';
 import { h, icon, timeOf } from '../ui.ts';
@@ -58,6 +58,7 @@ export function entrySummary(e: Entry): string {
     else if (el.type === 'trials' && el.trials.length > 0) parts.push(`Prueba: ${el.trials.filter((t) => t.ok).length} de ${el.trials.length}`);
     else if (el.type === 'table') parts.push(`Tabla (${el.rows.length} filas)`);
     else if (el.type === 'photo' && el.caption?.trim()) parts.push(el.caption.trim());
+    else if (el.type === 'match') parts.push(['Partido', ...matchRow(el).slice(0, 3)].filter((s) => s).join(' · '));
   }
   return parts.join(' · ');
 }

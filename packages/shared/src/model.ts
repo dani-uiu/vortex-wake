@@ -115,7 +115,9 @@ export type EntryKind =
   | 'wiringDoc'
   | 'reflection'
   | 'gameAnalysis'
-  | 'autonomousPlan';
+  | 'autonomousPlan'
+  /** Un partido de torneo (modo torneo): va a la página de registro del torneo. */
+  | 'tournamentLog';
 
 export type EntryMark = 'normal' | 'milestone' | 'printed3d' | 'bugFound' | 'keyDecision' | 'change' | 'inspiration' | 'tournament';
 
@@ -176,7 +178,32 @@ export type EntryElement =
   | { id: string; type: 'link'; url: string; title?: string }
   | { id: string; type: 'list'; items: string[] }
   | { id: string; type: 'table'; header: string[]; rows: string[][] }
-  | { id: string; type: 'trials'; trials: Trial[] };
+  | { id: string; type: 'trials'; trials: Trial[] }
+  | MatchElement;
+
+/** Secciones con registro de cambios (a donde puede ir lo que "se ajustó"). */
+export type ChangeSection = 'mechanics' | 'coding' | 'wiring';
+
+/** Un partido de torneo, rápido de llenar entre partidos. Todo es opcional salvo el nombre. */
+export interface MatchElement {
+  id: string;
+  type: 'match';
+  /** Número o nombre del partido: "Q12", "Semifinal 2-1". */
+  match: string;
+  alliance?: 'red' | 'blue';
+  partner?: string;
+  opponents?: string;
+  ourScore?: string;
+  theirScore?: string;
+  result?: 'win' | 'loss' | 'tie';
+  failed?: string;
+  adjusted?: string;
+  /** Si lo que se ajustó va al registro de cambios, de qué sección. */
+  adjustedSection?: ChangeSection;
+}
+
+export const MATCH_RESULT_LABELS: Record<NonNullable<MatchElement['result']>, string> = { win: 'Ganamos', loss: 'Perdimos', tie: 'Empate' };
+export const ALLIANCE_LABELS: Record<NonNullable<MatchElement['alliance']>, string> = { red: 'Roja', blue: 'Azul' };
 
 export type ElementType = EntryElement['type'];
 
@@ -229,6 +256,7 @@ export const ENTRY_KIND_LABELS: Record<EntryKind, string> = {
   reflection: 'Reflexión',
   gameAnalysis: 'Análisis del juego',
   autonomousPlan: 'Autónomo',
+  tournamentLog: 'Partido de torneo',
 };
 
 export const ENTRY_KINDS = Object.keys(ENTRY_KIND_LABELS) as EntryKind[];

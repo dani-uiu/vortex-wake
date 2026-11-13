@@ -18,7 +18,10 @@
  */
 
 import {
+  ALLIANCE_LABELS,
+  MATCH_RESULT_LABELS,
   initialsOf,
+  type MatchElement,
   type CaptureSession,
   type Entry,
   type EntryElement,
@@ -90,6 +93,7 @@ export const FIELD_PLAN: Record<EntryKind, FieldPlan> = {
   reflection: { text: 'learned', photos: 'learned' },
   gameAnalysis: { text: 'strategy', photos: 'strategy', table: 'priorities' },
   autonomousPlan: { text: 'rationale', photos: 'path', table: 'steps', trials: 'testResults' },
+  tournamentLog: { text: 'notes', photos: 'notes', table: 'matches' },
 };
 
 const INFERRED_SECTION: Partial<Record<EntryKind, SectionId>> = {
@@ -99,6 +103,7 @@ const INFERRED_SECTION: Partial<Record<EntryKind, SectionId>> = {
   wiringDoc: 'wiring',
   gameAnalysis: 'strategy',
   autonomousPlan: 'strategy',
+  tournamentLog: 'strategy',
 };
 
 const SECTION_ORDER: SectionId[] = ['mechanics', 'coding', 'wiring', 'strategy'];
@@ -200,6 +205,7 @@ export function assembleNotebook(input: AssembleInput): AssembleResult {
     const tableColumns = plan.table ? columnsOf(spec, plan.table) : 0;
     let trialNumber = 0;
     const labelItems: { label: PhotoLabel; photo: number }[] = [];
+    const matchChanges: (ChangeRecord & { date: IsoDate })[] = [];
     for (const e of g.entries) {
       const parts: string[] = [];
       for (const el of e.elements) {
@@ -221,6 +227,15 @@ export function assembleNotebook(input: AssembleInput): AssembleResult {
               for (const r of el.rows) tableRows.push(fitRow(r, tableColumns));
             } else parts.push(tableText(el));
             break;
+          case 'match': {
+            const row = matchRow(el);
+            if (plan.table === 'matches') tableRows.push(row);
+            else parts.push(row.filter((c) => c).join(' · '));
+            if (el.adjusted?.trim() && el.adjustedSection) {
+              matchChanges.push({ section: el.adjustedSection, change: el.adjusted.trim(), evidence: [el.match.trim() ? `Partido ${el.match.trim()}` : '', row[2] ?? '', el.failed?.trim() ?? ''].filter((s) => s).join(' · '), date: e.sessionDate });
+            }
+            break;
+          }
           case 'trials': {
             if (el.trials.length === 0) break;
             if (plan.trials && plan.trials === plan.table) {
@@ -297,6 +312,13 @@ export function assembleNotebook(input: AssembleInput): AssembleResult {
         }
       }
     }
+    // Lo que "se ajustó" en un partido va al registro de cambios de su sección, con el partido como evidencia.
+    for (const c of matchChanges) {
+      const rec: ChangeRecord = { section: c.section as SectionId, change: c.change, test: page.id };
+      if (c.evidence) rec.evidence = c.evidence;
+      if (c.date !== first.sessionDate) rec.date = c.date;
+      changes.push(rec);
+    }
     if (changes.length > 0) page.changes = changes;
     if (credits.length > 0) page.credits = credits;
     pages.push(page);
@@ -343,6 +365,15 @@ export function assembleNotebook(input: AssembleInput): AssembleResult {
   function hasTrials(g: Group): boolean {
     return g.entries.some((e) => e.elements.some((el) => el.type === 'trials' && el.trials.length > 0));
   }
+}
+
+/** Fila de la tabla de partidos: partido, alianza (aliado y rivales), marcador, qué falló, qué ajustamos. */
+export function matchRow(m: MatchElement): string[] {
+  const alliance = [m.alliance ? ALLIANCE_LABELS[m.alliance] : '', m.partner?.trim() ? `con ${m.partner.trim()}` : '', m.opponents?.trim() ? `vs ${m.opponents.trim()}` : '']
+    .filter((s) => s)
+    .join(' ');
+  const score = [m.ourScore?.trim() || m.theirScore?.trim() ? `${m.ourScore?.trim() || '?'}-${m.theirScore?.trim() || '?'}` : '', m.result ? MATCH_RESULT_LABELS[m.result] : ''].filter((s) => s).join(' · ');
+  return [m.match.trim(), alliance, score, m.failed?.trim() ?? '', m.adjusted?.trim() ?? ''];
 }
 
 /** Anotaciones de la foto → marcas que el generador dibuja como formas. */

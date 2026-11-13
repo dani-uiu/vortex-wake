@@ -24,6 +24,7 @@ import {
   type Entry,
   type EntryElement,
   type EntryMark,
+  type MatchElement,
   type SectionId,
 } from '@vortex-wake/shared';
 import type { App } from '../app.ts';
@@ -32,7 +33,8 @@ import { WHAT_OPTIONS, applyWhat, exactLabel, setTarget, targetLabel, whatOf } f
 import { autosize, debounce, h, icon, openSheet, setChildren, timeOf, toast } from '../ui.ts';
 import { openAnnotator } from './annotate.ts';
 import { photoButton, statusPill } from './common.ts';
-import { newElement } from './home.ts';
+import { newElement, newMatch } from './home.ts';
+import { dictationFor } from '../dictation.ts';
 import { annotationsToMarks, markedImage } from './marks.ts';
 
 const SECTIONS: SectionId[] = ['mechanics', 'coding', 'wiring', 'strategy'];
@@ -162,6 +164,13 @@ export function renderEditor(root: HTMLElement, app: App, id: string, onDone: ()
         desk && nav?.next
           ? h('button', { class: 'btn primary big', type: 'button', 'data-testid': 'editor-save-next', onclick: navTo(nav.next) }, 'Listo, siguiente', icon('down'))
           : h('button', { class: 'btn primary big', type: 'button', onclick: done }, 'Listo'),
+        // Modo torneo: el siguiente partido sin pasar por el inicio.
+        !desk && entry.elements.some((x) => x.type === 'match')
+          ? h('button', { class: 'btn secondary', type: 'button', 'data-testid': 'next-match', onclick: () => {
+              save.flush();
+              void saving.then(() => newMatch(app)).then((nid) => (location.hash = `#/entrada/${nid}`));
+            } }, icon('trophy'), 'Otro partido')
+          : null,
         del,
       ),
     ),
@@ -218,7 +227,8 @@ export function renderEditor(root: HTMLElement, app: App, id: string, onDone: ()
       (el.type === 'text' && !el.text.trim()) ||
       (el.type === 'link' && !el.url.trim()) ||
       (el.type === 'list' && el.items.length === 0) ||
-      (el.type === 'trials' && el.trials.length === 0);
+      (el.type === 'trials' && el.trials.length === 0) ||
+      (el.type === 'match' && !el.match.trim() && !el.failed && !el.adjusted);
     if (empty || confirm('¿Quitar este elemento?')) removeElement(el.id);
   }
 
@@ -272,7 +282,105 @@ export function renderEditor(root: HTMLElement, app: App, id: string, onDone: ()
         return shell(el, 'Tabla', [tableEditor(el)]);
       case 'trials':
         return shell(el, 'Prueba en vivo', [trialsEditor(el)]);
+      case 'match':
+        return shell(el, 'Partido de torneo', [matchEditor(el)]);
     }
+  }
+
+  /** Partido: todo en una pantalla, para llenarlo entre partidos. */
+  function matchEditor(el: MatchElement): HTMLElement {
+    const box = h('div', { class: 'match' });
+    const text = (key: 'match' | 'partner' | 'opponents' | 'ourScore' | 'theirScore', placeholder: string, label: string, numeric = false) => {
+      const i = h('input', { type: 'text', value: el[key] ?? '', placeholder, 'aria-label': label, 'data-field': key, autocomplete: 'off', ...(numeric ? { inputmode: 'numeric' } : {}) });
+      i.addEventListener('input', () => {
+        const v = i.value;
+        if (key === 'match') el.match = v;
+        else if (v.trim()) el[key] = v;
+        else delete el[key];
+        if ((key === 'ourScore' || key === 'theirScore') && !resultTouched) autoResult();
+        save();
+      });
+      i.addEventListener('blur', () => save.flush());
+      return i;
+    };
+    let resultTouched = el.result !== undefined;
+    const autoResult = () => {
+      const a = Number(el.ourScore);
+      const b = Number(el.theirScore);
+      if (el.ourScore?.trim() && el.theirScore?.trim() && Number.isFinite(a) && Number.isFinite(b)) el.result = a > b ? 'win' : a < b ? 'loss' : 'tie';
+      renderSegs();
+    };
+    const long = (key: 'failed' | 'adjusted', placeholder: string, label: string) =>
+      h('label', { class: 'q' }, h('span', { class: 'field-label', text: label }), dictationFor(textArea(el[key] ?? '', placeholder, (v) => {
+        if (v.trim()) el[key] = v;
+        else delete el[key];
+        if (key === 'adjusted') renderSegs();
+      }, `match-${key}`)));
+    const segs = h('div', { class: 'stack-tight' });
+    const seg = <T extends string>(label: string, options: [T, string][], current: T | undefined, set: (v: T | undefined) => void, testid: string) =>
+      h(
+        'div',
+        { class: 'seg match-seg', role: 'group', 'aria-label': label, 'data-testid': testid },
+        options.map(([v, l]) =>
+          h('button', { class: `seg-btn ${current === v ? 'on' : ''}`, type: 'button', 'aria-pressed': String(current === v), 'data-value': v, onclick: () => (set(current === v ? undefined : v), saveNow(), renderSegs()) }, l),
+        ),
+      );
+    function renderSegs() {
+      setChildren(
+        segs,
+        h('span', { class: 'field-label', text: 'Resultado' }),
+        seg('Resultado', [['win', 'Ganamos'], ['loss', 'Perdimos'], ['tie', 'Empate']], el.result, (v) => {
+          resultTouched = true;
+          if (v) el.result = v;
+          else delete el.result;
+        }, 'match-result'),
+      );
+      setChildren(
+        changeBox,
+        el.adjusted?.trim()
+          ? h(
+              'div',
+              { class: 'stack-tight' },
+              h('span', { class: 'field-label', text: '¿Va al registro de cambios?' }),
+              seg('Registro de cambios', [['mechanics', 'Mecánica'], ['coding', 'Programación'], ['wiring', 'Cableado']], el.adjustedSection, (v) => {
+                if (v) el.adjustedSection = v;
+                else delete el.adjustedSection;
+              }, 'match-change'),
+            )
+          : null,
+      );
+    }
+    const changeBox = h('div');
+    renderSegs();
+    box.append(
+      h('div', { class: 'match-row' }, h('label', { class: 'q grow' }, h('span', { class: 'field-label', text: 'Partido' }), text('match', 'Q12, Semifinal 2…', 'Número o nombre del partido'))),
+      h(
+        'div',
+        { class: 'stack-tight' },
+        h('span', { class: 'field-label', text: 'Alianza' }),
+        seg('Alianza', [['red', 'Roja'], ['blue', 'Azul']], el.alliance, (v) => {
+          if (v) el.alliance = v;
+          else delete el.alliance;
+        }, 'match-alliance'),
+      ),
+      h('div', { class: 'match-row' }, text('partner', 'Equipo aliado', 'Equipo aliado'), text('opponents', 'Rivales', 'Equipos rivales')),
+      h('div', { class: 'match-row score' }, h('span', { class: 'field-label', text: 'Marcador' }), text('ourScore', 'Nosotros', 'Puntos de nuestra alianza', true), h('span', { class: 'muted', text: '–' }), text('theirScore', 'Ellos', 'Puntos de la otra alianza', true)),
+      segs,
+      long('failed', '¿Qué falló en este partido?', 'Qué falló'),
+      long('adjusted', '¿Qué ajustamos antes del siguiente?', 'Qué ajustamos'),
+      changeBox,
+    );
+    // El selector de alianza también se repinta con renderSegs (solo el de resultado y cambios cambian con el texto).
+    box.querySelectorAll<HTMLElement>('[data-testid=match-alliance] .seg-btn').forEach((b) =>
+      b.addEventListener('click', () => {
+        for (const x of box.querySelectorAll<HTMLElement>('[data-testid=match-alliance] .seg-btn')) {
+          const on = x.dataset.value === el.alliance;
+          x.classList.toggle('on', on);
+          x.setAttribute('aria-pressed', String(on));
+        }
+      }),
+    );
+    return box;
   }
 
   async function openPhotoAnnotator(el: Extract<EntryElement, { type: 'photo' }>) {
