@@ -15,6 +15,8 @@ import {
   MAX_PHOTO_BYTES,
   TEAM_KEY_HEADER,
   TEAM_KEY_QUERY,
+  RECENT_SESSION_DAYS,
+  daysBefore,
   checkAttendance,
   checkClosing,
   checkEntry,
@@ -218,9 +220,15 @@ async function state(store: D1Store, url: URL, access: AccessLevel): Promise<Res
   const raw = url.searchParams.get('date');
   const date = raw && isValidDate(raw) ? raw : undefined;
   if (raw && !date) throw new HttpError(400, 'fecha inválida');
-  const [team, sessions, entries, tasks] = await Promise.all([store.teamJson(), store.sessionsJson(date), store.entriesJson(date), store.tasksJson()]);
-  const rest: Omit<StateResponse, 'team' | 'sessions' | 'entries' | 'tasks'> = { version: API_VERSION, serverTime: new Date().toISOString(), access, hosted: true };
-  const body = `{"team":${team},"sessions":${sessions},"entries":${entries},"tasks":${tasks},${JSON.stringify(rest).slice(1)}`;
+  const [team, sessions, entries, tasks, recent] = await Promise.all([
+    store.teamJson(),
+    store.sessionsJson(date),
+    store.entriesJson(date),
+    store.tasksJson(),
+    date ? store.sessionsBetweenJson(daysBefore(date, RECENT_SESSION_DAYS), date) : Promise.resolve(undefined),
+  ]);
+  const rest: Omit<StateResponse, 'team' | 'sessions' | 'entries' | 'tasks' | 'recentSessions'> = { version: API_VERSION, serverTime: new Date().toISOString(), access, hosted: true };
+  const body = `{"team":${team},"sessions":${sessions},"entries":${entries},"tasks":${tasks},${recent ? `"recentSessions":${recent},` : ''}${JSON.stringify(rest).slice(1)}`;
   return new Response(body, { headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' } });
 }
 

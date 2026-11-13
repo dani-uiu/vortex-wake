@@ -55,6 +55,16 @@ export function featureContract(ctx: () => ContractCtx): void {
     expect((await put(apiPath.task('otro'), t)).status).toBe(400);
   });
 
+  it('con ?date= llegan las sesiones recientes (para el recordatorio de cierre); sin fecha no', async () => {
+    const post = (path: string, body: unknown) => ctx().call(path, { method: 'POST', body: JSON.stringify(body) });
+    expect((await post(apiPath.attendance('2026-11-03'), { memberId: 'ana', checkIn: '2026-11-03T16:00:00.000Z' })).status).toBe(200);
+    expect((await post(apiPath.attendance('2026-10-01'), { memberId: 'ana', checkIn: '2026-10-01T16:00:00.000Z' })).status).toBe(200);
+    const s = await state('2026-11-05');
+    expect(s.recentSessions?.map((x) => x.date)).toEqual(['2026-11-03']);
+    expect(s.sessions.every((x) => x.date === '2026-11-05')).toBe(true);
+    expect((await state()).recentSessions).toBeUndefined();
+  });
+
   it('una entrada en el formato anterior (sin campos nuevos) se sigue aceptando igual', async () => {
     const e = entry({ id: 'vieja1', elements: [{ id: 'p', type: 'photo', photoId: 'foto-b', caption: 'Intake' }, { id: 't', type: 'text', text: 'antes' }] });
     expect((await put(apiPath.entry(e.id), e)).status).toBe(200);

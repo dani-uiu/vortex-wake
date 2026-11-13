@@ -350,6 +350,14 @@ body:has(dialog[open]) { overflow: hidden; }
 /* Cierre */
 .q { display: block; }
 
+/* Recordatorio de cierre: discreto, una línea */
+.nudge-slot:empty { display: none; }
+.nudge-slot { margin-top: 8px; }
+.nudge { display: flex; align-items: center; gap: 8px; padding: 2px 2px 2px 12px; border-radius: 12px; background: var(--warn-soft); color: var(--warn); font-size: 14px; font-weight: 600; }
+.nudge-text { flex: 1; min-width: 0; }
+.nudge-go { flex: none; min-height: 44px; padding: 0 12px; border: 0; background: transparent; color: var(--warn); font-weight: 800; text-decoration: underline; text-underline-offset: 3px; }
+.nudge .icon-btn { color: var(--warn); }
+
 /* Pendientes entre sesiones */
 .tasks-slot:empty { display: none; }
 .tasks-slot { margin: -8px 0 18px; }

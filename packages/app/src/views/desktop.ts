@@ -5,7 +5,7 @@
  * celular, adaptado a pantalla ancha.
  */
 
-import { isUnclassified, slugify, type Entry, type TeamConfig } from '@vortex-wake/shared';
+import { hasClosing, isUnclassified, slugify, type Entry, type TeamConfig } from '@vortex-wake/shared';
 import type { App } from '../app.ts';
 import { download, generateNotebookFile } from '../notebook.ts';
 import { dateLabel, h, icon, setChildren, toast } from '../ui.ts';
@@ -183,7 +183,8 @@ export function renderDesktop(root: HTMLElement, app: App, go: (hash: string) =>
       ...dates.map((d) => {
         const list = all.filter((e) => e.sessionDate === d);
         const att = app.sessions.get(d)?.attendance.length ?? 0;
-        return item(d, dateLabel(d), `${list.length} entradas · ${att} presentes`, list.filter(isUnclassified).length);
+        const noClosing = (list.length > 0 || att > 0) && d < app.today && !hasClosing(app.sessions.get(d)?.closing);
+        return item(d, dateLabel(d), `${list.length} entradas · ${att} presentes${noClosing ? ' · sin cierre' : ''}`, list.filter(isUnclassified).length);
       }),
     );
 
@@ -216,6 +217,7 @@ export function renderDesktop(root: HTMLElement, app: App, go: (hash: string) =>
             h('h2', { class: 'day-title', text: dateLabel(d) }),
             h('span', { class: 'muted small', text: `${list.length} entradas` }),
             todo > 0 && !onlyTodo ? h('span', { class: 'tag todo', text: `${todo} sin clasificar` }) : null,
+            d < app.today && !hasClosing(c) ? h('a', { class: 'tag todo', href: `#/cierre/${d}?desde=escritorio`, 'data-testid': 'desk-no-closing', title: 'Llenar el cierre de esta sesión', text: 'Sin cierre' }) : null,
           ),
           present ? h('p', { class: 'muted small', text: `Presentes: ${present}` }) : null,
           c && (c.whatWeDid || c.whatFailed || c.whatsNext)

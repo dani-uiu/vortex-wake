@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { checkTask, closingLines, closingTaskId, mergeTask, nextDay, tasksFromClosing, visibleTasks, type TaskItem } from '../src/index.ts';
+import { checkTask, closingNudge, hasClosing, closingLines, closingTaskId, mergeTask, nextDay, tasksFromClosing, visibleTasks, type TaskItem } from '../src/index.ts';
 
 const T0 = '2026-11-10T22:00:00.000Z';
 const day = (iso: string) => iso.slice(0, 10);
@@ -45,6 +45,23 @@ describe('pendientes entre sesiones', () => {
     const done = { ...a, done: { at: '2026-11-12T18:00:00.000Z', by: 'ana' } };
     expect(visibleTasks([done], today, day).length).toBe(1);
     expect(visibleTasks([done], nextDay(today), day).length).toBe(0);
+  });
+
+  it('recordatorio de cierre: sesión anterior sin cierre, o la de hoy tras un rato sin capturas', () => {
+    const now = Date.parse('2026-11-12T23:00:00.000Z');
+    const e = (date: string, createdAt: string) => ({ id: createdAt, sessionDate: date, createdAt, updatedAt: createdAt, authorIds: [], marks: [], elements: [] });
+    const tuesday = { date: '2026-11-10', attendance: [{ memberId: 'ana', checkIn: '2026-11-10T16:00:00.000Z' }] };
+    expect(closingNudge({ today: '2026-11-12', now, sessions: [tuesday], entries: [] })).toEqual({ date: '2026-11-10', today: false });
+    expect(closingNudge({ today: '2026-11-12', now, sessions: [tuesday], entries: [], dismissed: (d) => d === '2026-11-10' })).toBeUndefined();
+    const closed = { ...tuesday, closing: { whatWeDid: 'Chasis', updatedAt: '2026-11-10T22:00:00.000Z' } };
+    expect(closingNudge({ today: '2026-11-12', now, sessions: [closed], entries: [] })).toBeUndefined();
+    // Un cierre vacío cuenta como sin cierre; algo de hace más de una semana ya no se recuerda.
+    expect(closingNudge({ today: '2026-11-12', now, sessions: [{ ...tuesday, closing: { whatWeDid: ' ', updatedAt: T0 } }], entries: [] })?.date).toBe('2026-11-10');
+    expect(closingNudge({ today: '2026-11-20', now, sessions: [tuesday], entries: [] })).toBeUndefined();
+    // Hoy: solo cuando ya pasó un rato sin capturas.
+    expect(closingNudge({ today: '2026-11-12', now, sessions: [closed], entries: [e('2026-11-12', '2026-11-12T22:30:00.000Z')] })).toBeUndefined();
+    expect(closingNudge({ today: '2026-11-12', now, sessions: [closed], entries: [e('2026-11-12', '2026-11-12T21:00:00.000Z')] })).toEqual({ date: '2026-11-12', today: true });
+    expect(hasClosing(undefined)).toBe(false);
   });
 
   it('mezcla por updatedAt y validación', () => {

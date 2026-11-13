@@ -5,7 +5,7 @@
  * (para mezclar).
  */
 
-import type { IsoDate, IsoDateTime, TaskItem } from './model.ts';
+import type { CaptureSession, Entry, IsoDate, IsoDateTime, SessionClosing, TaskItem } from './model.ts';
 
 /** Renglones de "¿Qué sigue?", sin viñetas ni numeración y sin repetir. */
 export function closingLines(whatsNext: string | undefined): string[] {
@@ -98,6 +98,60 @@ export function visibleTasks(tasks: Iterable<TaskItem>, today: IsoDate, localDat
 export function mergeTask(current: TaskItem | undefined, incoming: TaskItem): { applied: boolean; task: TaskItem } {
   if (current && current.updatedAt > incoming.updatedAt) return { applied: false, task: current };
   return { applied: true, task: incoming };
+}
+
+// --- Recordatorio de cierre ------------------------------------------------------------
+
+/** El cierre tiene al menos una de las tres respuestas. */
+export function hasClosing(c: SessionClosing | undefined): boolean {
+  return !!c && [c.whatWeDid, c.whatFailed, c.whatsNext].some((s) => !!s?.trim());
+}
+
+export interface ClosingNudge {
+  date: IsoDate;
+  /** `true`: es la sesión de hoy (ya pasó un rato sin capturas). */
+  today: boolean;
+}
+
+/** Minutos sin capturas antes de recordar el cierre de hoy. */
+export const CLOSING_IDLE_MINUTES = 90;
+/** Hasta cuántos días atrás se recuerda una sesión sin cierre. */
+export const CLOSING_REMINDER_DAYS = 7;
+
+/**
+ * ¿Hay que recordar un cierre? La sesión anterior más reciente (si fue hace
+ * una semana o menos y tuvo asistencia o capturas) sin cierre, o la de hoy si
+ * tiene capturas, no tiene cierre y ya pasó un rato sin capturar.
+ */
+export function closingNudge(opts: {
+  today: IsoDate;
+  now: number;
+  sessions: Iterable<CaptureSession>;
+  entries: Iterable<Entry>;
+  dismissed?: (date: IsoDate) => boolean;
+}): ClosingNudge | undefined {
+  const sessions = new Map<IsoDate, CaptureSession>();
+  for (const s of opts.sessions) sessions.set(s.date, s);
+  const byDate = new Map<IsoDate, Entry[]>();
+  for (const e of opts.entries) if (!e.deleted) byDate.set(e.sessionDate, [...(byDate.get(e.sessionDate) ?? []), e]);
+  const dismissed = opts.dismissed ?? (() => false);
+  const oldest = (() => {
+    const d = new Date(`${opts.today}T12:00:00Z`);
+    d.setUTCDate(d.getUTCDate() - CLOSING_REMINDER_DAYS);
+    return d.toISOString().slice(0, 10);
+  })();
+  const past = [...new Set([...sessions.keys(), ...byDate.keys()])]
+    .filter((d) => d < opts.today && d >= oldest)
+    .filter((d) => (sessions.get(d)?.attendance.length ?? 0) > 0 || (byDate.get(d)?.length ?? 0) > 0)
+    .sort();
+  const last = past[past.length - 1];
+  if (last && !hasClosing(sessions.get(last)?.closing) && !dismissed(last)) return { date: last, today: false };
+  const todays = byDate.get(opts.today) ?? [];
+  if (todays.length > 0 && !hasClosing(sessions.get(opts.today)?.closing) && !dismissed(opts.today)) {
+    const lastCapture = Math.max(...todays.map((e) => Date.parse(e.createdAt)));
+    if (opts.now - lastCapture >= CLOSING_IDLE_MINUTES * 60_000) return { date: opts.today, today: true };
+  }
+  return undefined;
 }
 
 /** El día siguiente (`AAAA-MM-DD`). */

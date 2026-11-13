@@ -16,7 +16,9 @@ import {
   MAX_PHOTO_BYTES,
   TEAM_KEY_HEADER,
   TEAM_KEY_QUERY,
+  RECENT_SESSION_DAYS,
   addMemberToTeam,
+  daysBefore,
   checkAttendance,
   checkClosing,
   checkEntry,
@@ -108,6 +110,10 @@ export function startServer(opts: ServerOptions): Promise<RunningServer> {
         serverTime: new Date().toISOString(),
         tasks: [...store.tasks.values()],
       };
+      if (date) {
+        const from = daysBefore(date, RECENT_SESSION_DAYS);
+        body.recentSessions = [...store.sessions.values()].filter((s) => s.date >= from && s.date < date).sort((a, b) => (a.date < b.date ? -1 : 1));
+      }
       return sendJson(res, 200, body);
     }
     if (method === 'PUT' && p === '/api/team') {

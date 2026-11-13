@@ -4,8 +4,10 @@
  */
 
 import {
+  closingNudge,
   emptySession,
   later,
+  type ClosingNudge,
   localDate,
   mergeAttendance,
   mergeSessions,
@@ -35,6 +37,8 @@ const LS_AUTHORS = 'vw.lastAuthors';
 const LS_ACCESS = 'vw.access';
 /** Más el id de la persona: lo último que clasificó en este teléfono. */
 const LS_RECENT = 'vw.recent.';
+/** Más la fecha: "Ahora no" en el recordatorio de cierre de ese día (solo en este teléfono). */
+const LS_NUDGE = 'vw.nudge.';
 
 /** Clasificación recordada en el teléfono (solo para proponerla; no se guarda en el servidor). */
 export interface Classification {
@@ -225,7 +229,8 @@ export class App {
       this.hosted = s.hosted === true;
       lsSet(LS_ACCESS, this.access);
       lsSet(LS_HOSTED, this.hosted ? '1' : null);
-      await this.applyServerState(s.team, s.sessions, s.entries);
+      // Con ?date= también llegan las sesiones de los días anteriores (para el recordatorio de cierre).
+      await this.applyServerState(s.team, [...(s.recentSessions ?? []), ...s.sessions], s.entries);
       await this.applyServerTasks(s.tasks ?? []);
     } catch (e) {
       if (e instanceof NetworkError) this.sync.online = false;
@@ -267,6 +272,24 @@ export class App {
         await this.db.putTask(t);
       }
     }
+  }
+
+  // --- recordatorio de cierre -----------------------------------------------------------
+
+  /** Sesión que quedó sin cierre (o la de hoy, si ya pasó un rato sin capturas). */
+  closingNudge(): ClosingNudge | undefined {
+    return closingNudge({
+      today: this.today,
+      now: Date.now(),
+      sessions: this.sessions.values(),
+      entries: this.entries.values(),
+      dismissed: (d) => lsGet(LS_NUDGE + d) === '1',
+    });
+  }
+
+  dismissNudge(date: string): void {
+    lsSet(LS_NUDGE + date, '1');
+    this.emit();
   }
 
   // --- pendientes ---------------------------------------------------------------------

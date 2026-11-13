@@ -181,6 +181,12 @@ export class D1Store {
     return `[${results.map((r) => r.json).join(',')}]`;
   }
 
+  /** Sesiones con fecha en [from, to). */
+  async sessionsBetweenJson(from: string, to: string): Promise<string> {
+    const { results } = await this.db.prepare('SELECT json FROM sessions WHERE date >= ?1 AND date < ?2 ORDER BY date').bind(from, to).all<{ json: string }>();
+    return `[${results.map((r) => r.json).join(',')}]`;
+  }
+
   async entriesJson(date?: string): Promise<string> {
     const q = date
       ? this.db.prepare('SELECT json FROM entries WHERE session_date = ?1').bind(date)

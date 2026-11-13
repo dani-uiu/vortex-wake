@@ -83,7 +83,8 @@ export function renderHome(root: HTMLElement, app: App, go: (hash: string) => vo
 
   const banner = h('div', { class: 'sync-slot' });
   const tasksSlot = h('div', { class: 'tasks-slot' });
-  root.replaceChildren(header, banner, actions, tasksSlot, h('h2', { class: 'section-title', text: 'Hoy' }), filters, list, footer);
+  const nudgeSlot = h('div', { class: 'nudge-slot' });
+  root.replaceChildren(header, banner, nudgeSlot, actions, tasksSlot, h('h2', { class: 'section-title', text: 'Hoy' }), filters, list, footer);
 
   const render = () => {
     const today = app.today;
@@ -110,6 +111,20 @@ export function renderHome(root: HTMLElement, app: App, go: (hash: string) => vo
       ),
     );
     setChildren(banner, quiet ? null : sync);
+    const nudge = app.closingNudge();
+    setChildren(
+      nudgeSlot,
+      nudge
+        ? h(
+            'div',
+            { class: 'nudge', role: 'status', 'data-testid': 'closing-nudge', 'data-date': nudge.date },
+            icon('clock', 'icon sm'),
+            h('span', { class: 'nudge-text', text: nudge.today ? 'Falta el cierre de hoy.' : `La sesión del ${weekday(nudge.date)} quedó sin cierre.` }),
+            h('button', { class: 'nudge-go', type: 'button', 'data-testid': 'closing-nudge-go', onclick: () => go(nudge.today ? '#/cierre' : `#/cierre/${nudge.date}`) }, 'Llenar'),
+            h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'Ahora no', 'data-testid': 'closing-nudge-dismiss', onclick: () => app.dismissNudge(nudge.date) }, icon('x', 'icon sm')),
+          )
+        : null,
+    );
     // Los pendientes no se repintan mientras se escribe o se usa uno (por si llega algo del servidor).
     if (!tasksSlot.contains(document.activeElement)) setChildren(tasksSlot, tasksBlock(app));
 
@@ -179,22 +194,37 @@ export function renderWho(root: HTMLElement, app: App, go: (hash: string) => voi
   });
 }
 
-export function renderClosing(root: HTMLElement, app: App, go: (hash: string) => void): () => void {
-  const c = app.session().closing;
+/** "martes" o, si fue hace más de 6 días, "martes 3 de noviembre". */
+export function weekday(date: string): string {
+  const [y, m, d] = date.split('-').map(Number);
+  const dt = new Date(y ?? 2000, (m ?? 1) - 1, d ?? 1);
+  const days = (Date.now() - dt.getTime()) / 86_400_000;
+  return dt.toLocaleDateString('es-MX', days > 6 ? { weekday: 'long', day: 'numeric', month: 'long' } : { weekday: 'long' });
+}
+
+export function renderClosing(root: HTMLElement, app: App, go: (hash: string) => void, date = app.today, back = '#/'): () => void {
+  const isToday = date === app.today;
+  const c = app.session(date).closing;
   const q = (label: string, value: string | undefined, testid: string) => {
     const t = h('textarea', { rows: '3', 'data-testid': testid, value: value ?? '' });
     return { t, el: h('label', { class: 'q' }, h('span', { class: 'field-label', text: label }), t) };
   };
-  const a = q('¿Qué hicimos hoy?', c?.whatWeDid, 'closing-did');
+  const a = q(isToday ? '¿Qué hicimos hoy?' : '¿Qué hicimos?', c?.whatWeDid, 'closing-did');
   const b = q('¿Qué falló?', c?.whatFailed, 'closing-failed');
-  const d = q('¿Qué sigue?', c?.whatsNext, 'closing-next');
+  const d = q('¿Qué sigue? (un pendiente por renglón)', c?.whatsNext, 'closing-next');
   const save = async () => {
-    await app.saveClosing({ whatWeDid: a.t.value.trim(), whatFailed: b.t.value.trim(), whatsNext: d.t.value.trim() });
+    await app.saveClosing({ whatWeDid: a.t.value.trim(), whatFailed: b.t.value.trim(), whatsNext: d.t.value.trim() }, date);
     toast('Cierre guardado');
-    go('#/');
+    go(back);
   };
   root.replaceChildren(
-    h('header', { class: 'topbar' }, h('button', { class: 'back', type: 'button', onclick: () => go('#/') }, icon('back'), 'Volver'), h('h1', { text: 'Cierre de la sesión' }), h('p', { class: 'muted', text: 'Opcional. Lo puede llenar cualquiera; se guarda la última versión.' })),
+    h(
+      'header',
+      { class: 'topbar' },
+      h('button', { class: 'back', type: 'button', onclick: () => go(back) }, icon('back'), 'Volver'),
+      h('h1', { text: isToday ? 'Cierre de la sesión' : `Cierre del ${dateLabel(date)}` }),
+      h('p', { class: 'muted', text: 'Lo puede llenar cualquiera; se guarda la última versión. Cada renglón de "¿Qué sigue?" aparece como pendiente en la siguiente sesión.' }),
+    ),
     h('div', { class: 'stack' }, a.el, b.el, d.el, h('button', { class: 'btn primary big', type: 'button', 'data-testid': 'closing-save', onclick: () => void save() }, 'Guardar cierre')),
   );
   return () => {};
