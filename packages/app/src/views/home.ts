@@ -25,6 +25,8 @@ export function newElement(type: EntryElement['type']): EntryElement {
       return { id, type, trials: [] };
     case 'match':
       return { id, type, match: '' };
+    case 'route':
+      return { id, type, points: [] };
     case 'photo':
       throw new Error('las fotos se agregan con la cámara');
   }

@@ -179,7 +179,27 @@ export type EntryElement =
   | { id: string; type: 'list'; items: string[] }
   | { id: string; type: 'table'; header: string[]; rows: string[][] }
   | { id: string; type: 'trials'; trials: Trial[] }
-  | MatchElement;
+  | MatchElement
+  | RouteElement;
+
+/** Un paso de la ruta del autónomo: un punto sobre el mapa del campo (0 a 1) y lo que pasa ahí. */
+export interface RoutePoint {
+  id: string;
+  x: number;
+  y: number;
+  action?: string;
+  expected?: string;
+  points?: string;
+}
+
+/** Ruta del autónomo dibujada sobre el mapa del campo de la plantilla: puntos numerados en orden. */
+export interface RouteElement {
+  id: string;
+  type: 'route';
+  points: RoutePoint[];
+}
+
+export const MAX_ROUTE_POINTS = 40;
 
 /** Secciones con registro de cambios (a donde puede ir lo que "se ajustó"). */
 export type ChangeSection = 'mechanics' | 'coding' | 'wiring';

@@ -69,11 +69,19 @@ export function drawMarks(svg: SVGSVGElement, marks: DrawMark[], w: number, hgt:
   };
   const handle = (p: { x: number; y: number }) => svg.append(svgEl('circle', { cx: p.x, cy: p.y, r: r * 0.55, fill: 'rgba(200,16,46,.25)', stroke: MARK_RED, 'stroke-width': sw * 0.6 }));
 
-  // Primero las flechas, después las letras (encima).
+  // Primero las flechas, después las letras (encima). Una flecha entre dos círculos (ruta) va de borde a borde.
+  const onLabel = (fx: number, fy: number) => marks.some((l) => l.kind === 'label' && Math.abs(l.x - fx) < 1e-6 && Math.abs(l.y - fy) < 1e-6);
   for (const m of marks) {
     if (m.tx === undefined || m.ty === undefined) continue;
     const sel = m.id === selected;
-    if (m.kind === 'arrow') arrow(P(m.x, m.y), P(m.tx, m.ty), sel);
+    if (m.kind === 'arrow') {
+      const a = P(m.x, m.y);
+      const b = P(m.tx, m.ty);
+      const d = Math.hypot(b.x - a.x, b.y - a.y) || 1;
+      const ta = onLabel(m.x, m.y) ? r : 0;
+      const tb = onLabel(m.tx, m.ty) ? r : 0;
+      if (d - ta - tb > 2) arrow({ x: a.x + ((b.x - a.x) / d) * ta, y: a.y + ((b.y - a.y) / d) * ta }, { x: b.x - ((b.x - a.x) / d) * tb, y: b.y - ((b.y - a.y) / d) * tb }, sel);
+    }
     else {
       const c = clampC(P(m.x, m.y));
       const t = P(m.tx, m.ty);

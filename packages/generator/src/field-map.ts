@@ -90,6 +90,8 @@ export interface FieldMap {
   standard: StandardDefaults;
   pageTypes: Record<PageType, PageTypeMapping>;
   fixedPages: Record<FixedPageId, FixedPageMapping>;
+  /** Imágenes que se toman de la plantilla (el mapa del campo). */
+  templateImages?: { field?: { section: TemplateSection; shapes: string[] } };
 }
 
 export const defaultFieldMap = raw as unknown as FieldMap;

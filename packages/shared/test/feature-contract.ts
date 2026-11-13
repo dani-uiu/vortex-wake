@@ -72,6 +72,13 @@ export function featureContract(ctx: () => ContractCtx): void {
     expect((await put(apiPath.entry(e.id), { ...e, elements: [{ id: 'm', type: 'match', match: 'Q12', result: 'quizá' }] })).status).toBe(400);
   });
 
+  it('ruta del autónomo: se guarda y los puntos fuera del campo se rechazan', async () => {
+    const e = entry({ id: 'ruta1', kind: 'autonomousPlan', section: 'strategy', elements: [{ id: 'r', type: 'route', points: [{ id: 'p', x: 0.2, y: 0.8, action: 'Salir', points: '2' }] }] });
+    expect((await put(apiPath.entry(e.id), e)).status).toBe(200);
+    expect((await state()).entries.find((x) => x.id === 'ruta1')).toEqual(e);
+    expect((await put(apiPath.entry(e.id), { ...e, elements: [{ id: 'r', type: 'route', points: [{ id: 'p', x: -1, y: 0 }] }] })).status).toBe(400);
+  });
+
   it('una entrada en el formato anterior (sin campos nuevos) se sigue aceptando igual', async () => {
     const e = entry({ id: 'vieja1', elements: [{ id: 'p', type: 'photo', photoId: 'foto-b', caption: 'Intake' }, { id: 't', type: 'text', text: 'antes' }] });
     expect((await put(apiPath.entry(e.id), e)).status).toBe(200);

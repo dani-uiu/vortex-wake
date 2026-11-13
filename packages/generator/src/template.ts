@@ -102,6 +102,24 @@ export class Template {
     return this.slides.filter((s) => s.section === section);
   }
 
+  /**
+   * El mapa del campo: la imagen de fondo del patrón de la página "Campo en
+   * blanco" (página completa), para recortarla al cuadro del campo.
+   */
+  fieldImage(): Uint8Array {
+    const spec = this.map.templateImages?.field;
+    if (!spec) throw new TemplateError('el mapa de campos no dice dónde está el mapa del campo');
+    const slide = this.findByFingerprint({ shapes: [...spec.shapes].sort(), tables: {} }, spec.section);
+    if (!slide) throw new TemplateError('La plantilla no tiene la página del campo en blanco (se busca por sus formas; ver templateImages en field-map.json).');
+    const layout = this.pkg.readRels(slide.part).find((r) => r.type === REL_TYPES.slideLayout);
+    if (!layout) throw new TemplateError('la página del campo no tiene patrón');
+    const layoutPart = resolveTarget(slide.part, layout.target);
+    const img = this.pkg.readRels(layoutPart).find((r) => r.type === REL_TYPES.image && !r.external);
+    const bytes = img ? this.pkg.parts.get(resolveTarget(layoutPart, img.target)) : undefined;
+    if (!bytes) throw new TemplateError('el patrón de la página del campo no tiene imagen');
+    return bytes;
+  }
+
   /** Páginas modelo armadas por el generador (no están en la lista de la plantilla). */
   readonly synthetic: TemplateSlide[] = [];
   private readonly syntheticCache = new Map<string, TemplateSlide>();

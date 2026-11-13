@@ -58,6 +58,7 @@ export function entrySummary(e: Entry): string {
     else if (el.type === 'trials' && el.trials.length > 0) parts.push(`Prueba: ${el.trials.filter((t) => t.ok).length} de ${el.trials.length}`);
     else if (el.type === 'table') parts.push(`Tabla (${el.rows.length} filas)`);
     else if (el.type === 'photo' && el.caption?.trim()) parts.push(el.caption.trim());
+    else if (el.type === 'route') parts.push(`Ruta del autónomo: ${el.points.length} paso(s)`);
     else if (el.type === 'match') parts.push(['Partido', ...matchRow(el).slice(0, 3)].filter((s) => s).join(' · '));
   }
   return parts.join(' · ');

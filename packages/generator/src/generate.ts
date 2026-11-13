@@ -4,7 +4,7 @@
  * Node y en el navegador.
  */
 
-import { parseNotebook, replacePageRefs, type ImageRef, type NotebookDocument } from '@vortex-wake/shared';
+import { FIELD_IMAGE, TEMPLATE_FIELD_IMAGE, parseNotebook, replacePageRefs, type ImageRef, type NotebookDocument } from '@vortex-wake/shared';
 import { defaultFieldMap, type FieldMap, type FixedPageId } from './field-map.ts';
 import { LABELS, formatDate } from './format.ts';
 import { readImageInfo } from './images.ts';
@@ -97,7 +97,7 @@ export async function generateNotebook(params: {
   const lang = doc.language;
 
   // 1. Imágenes: se cargan todas antes de acomodar.
-  const images = await loadImages(doc, params.loadAsset);
+  const images = await loadImages(doc, params.loadAsset, () => fieldImage(template));
   const lookup = (src: string): ResolvedImage => {
     const img = images.get(src);
     if (!img) throw new Error(`imagen no cargada: ${src}`);
@@ -294,10 +294,26 @@ function collectImageRefs(doc: NotebookDocument): ImageRef[] {
   return refs;
 }
 
-async function loadImages(doc: NotebookDocument, load: AssetLoader): Promise<Map<string, ResolvedImage>> {
+/** El mapa del campo de la plantilla, recortado (con srcRect) al cuadro del campo. */
+function fieldImage(template: Template): ResolvedImage {
+  const bytes = template.fieldImage();
+  const full = readImageInfo(bytes);
+  const c = FIELD_IMAGE.crop;
+  // Si la imagen no mide lo esperado (otra plantilla), el recorte se escala.
+  const sx = full.width / FIELD_IMAGE.width;
+  const sy = full.height / FIELD_IMAGE.height;
+  const crop = { x: c.x * sx, y: c.y * sy, width: c.width * sx, height: c.height * sy, fullWidth: full.width, fullHeight: full.height };
+  return { src: TEMPLATE_FIELD_IMAGE, bytes, info: { format: full.format, width: Math.round(crop.width), height: Math.round(crop.height) }, crop };
+}
+
+async function loadImages(doc: NotebookDocument, load: AssetLoader, field: () => ResolvedImage): Promise<Map<string, ResolvedImage>> {
   const out = new Map<string, ResolvedImage>();
   for (const ref of collectImageRefs(doc)) {
     if (out.has(ref.src)) continue;
+    if (ref.src === TEMPLATE_FIELD_IMAGE) {
+      out.set(ref.src, field());
+      continue;
+    }
     let bytes: Uint8Array;
     try {
       bytes = await load(ref.src);

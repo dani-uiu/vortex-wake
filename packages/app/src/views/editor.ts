@@ -19,6 +19,7 @@ import {
   ENTRY_KIND_LABELS,
   ENTRY_MARKS,
   MARK_LABELS,
+  newId,
   PAGE_TYPES,
   SECTION_LABELS,
   type Entry,
@@ -32,6 +33,7 @@ import type { Classification } from '../app.ts';
 import { WHAT_OPTIONS, applyWhat, exactLabel, setTarget, targetLabel, whatOf } from '../classify.ts';
 import { autosize, debounce, h, icon, openSheet, setChildren, timeOf, toast } from '../ui.ts';
 import { openAnnotator } from './annotate.ts';
+import { fieldView, openRouteEditor } from './route.ts';
 import { openSketch } from './sketch.ts';
 import { photoButton, statusPill } from './common.ts';
 import { newElement, newMatch } from './home.ts';
@@ -125,6 +127,7 @@ export function renderEditor(root: HTMLElement, app: App, id: string, onDone: ()
         { class: 'sheet-list' },
         photoButton(desk ? 'Foto (cámara)' : 'Tomar foto', { camera: true, cls: 'sheet-item', testid: 'editor-photo', onFiles: (f) => (sheet.close(), void addPhotos(f)) }),
         photoButton(desk ? 'Fotos de la computadora' : 'Fotos de la galería', { camera: false, cls: 'sheet-item', onFiles: (f) => (sheet.close(), void addPhotos(f)) }),
+        h('button', { class: 'sheet-item', type: 'button', 'data-add': 'route', onclick: () => (sheet.close(), addRoute()) }, icon('route'), h('span', { text: 'Ruta del autónomo sobre el campo' })),
         h('button', { class: 'sheet-item', type: 'button', 'data-add': 'sketch', onclick: () => (sheet.close(), openSketch((file) => addPhotos([file], true))) }, icon('sketch'), h('span', { text: 'Boceto con el dedo' })),
         ...addKinds.map(([t, label]) =>
           h('button', { class: 'sheet-item', type: 'button', 'data-add': t, onclick: () => (sheet.close(), addElement(t)) }, icon(t), h('span', { text: label })),
@@ -194,6 +197,20 @@ export function renderEditor(root: HTMLElement, app: App, id: string, onDone: ()
     last?.focus();
   }
 
+  /** Una ruta va en un plan de autónomo (Estrategia), si la entrada todavía no tiene tipo. */
+  function addRoute() {
+    const el: Extract<EntryElement, { type: 'route' }> = { id: newId(), type: 'route', points: [] };
+    entry.elements.push(el);
+    if (!entry.kind) {
+      entry.kind = 'autonomousPlan';
+      entry.section = 'strategy';
+    }
+    saveNow();
+    renderElements();
+    renderClass();
+    openRoute(el);
+  }
+
   function removeElement(elId: string) {
     entry.elements = entry.elements.filter((x) => x.id !== elId);
     saveNow();
@@ -230,7 +247,8 @@ export function renderEditor(root: HTMLElement, app: App, id: string, onDone: ()
       (el.type === 'link' && !el.url.trim()) ||
       (el.type === 'list' && el.items.length === 0) ||
       (el.type === 'trials' && el.trials.length === 0) ||
-      (el.type === 'match' && !el.match.trim() && !el.failed && !el.adjusted);
+      (el.type === 'match' && !el.match.trim() && !el.failed && !el.adjusted) ||
+      (el.type === 'route' && el.points.length === 0);
     if (empty || confirm('¿Quitar este elemento?')) removeElement(el.id);
   }
 
@@ -286,7 +304,30 @@ export function renderEditor(root: HTMLElement, app: App, id: string, onDone: ()
         return shell(el, 'Prueba en vivo', [trialsEditor(el)]);
       case 'match':
         return shell(el, 'Partido de torneo', [matchEditor(el)]);
+      case 'route': {
+        const view = fieldView(el.points);
+        const list = el.points.length > 0
+          ? h('ol', {}, el.points.map((p) => h('li', { text: [p.action, p.expected, p.points ? `${p.points} pts` : ''].filter((s) => s?.trim()).join(' · ') || 'Sin descripción' })))
+          : h('p', { class: 'muted small', text: 'Todavía sin pasos.' });
+        const btn = h('button', { class: 'chip-btn', type: 'button', 'data-testid': 'draw-route', onclick: () => openRoute(el) }, icon('route'), el.points.length > 0 ? 'Editar la ruta' : 'Dibujar la ruta');
+        return shell(el, 'Ruta del autónomo', [h('div', { class: 'route-preview' }, view.el, h('div', { class: 'row wrap' }, btn), list)]);
+      }
     }
+  }
+
+  function openRoute(el: Extract<EntryElement, { type: 'route' }>) {
+    openRouteEditor({
+      points: el.points,
+      onChange: (points) => {
+        const target = entry.elements.find((x) => x.id === el.id);
+        if (target && target.type === 'route') target.points = points;
+        save();
+      },
+      onClose: () => {
+        save.flush();
+        renderElements();
+      },
+    });
   }
 
   /** Partido: todo en una pantalla, para llenarlo entre partidos. */

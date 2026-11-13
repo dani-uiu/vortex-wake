@@ -473,6 +473,33 @@ try {
   });
   log('B: modo torneo, dos partidos (uno con lo que se ajustó para el registro de cambios)');
 
+  // --- Ruta del autónomo sobre el mapa del campo ----------------------------------------
+  await b.click('[data-testid=new-text]');
+  await b.fill('[data-testid=text-input]', 'Rutina de la izquierda');
+  await b.click('[data-testid=editor-add]');
+  await b.click('[data-testid=sheet-add] [data-add=route]');
+  await b.waitForSelector('[data-testid=route-canvas]');
+  await tapOn(b, '[data-testid=route-canvas]', [0.15, 0.85]);
+  await tapOn(b, '[data-testid=route-canvas]', [0.35, 0.55]);
+  await tapOn(b, '[data-testid=route-canvas]', [0.7, 0.3]);
+  await dragOn(b, '[data-testid=route-canvas]', [0.7, 0.3], [0.75, 0.25]);
+  const step = (n: number, f: string) => `[data-testid=route-steps] [data-step="${n}"] [data-field=${f}]`;
+  await b.fill(step(1, 'action'), 'Salir de la esquina');
+  await b.fill(step(2, 'action'), 'Tomar el objeto del centro');
+  await b.fill(step(2, 'points'), '3');
+  await b.fill(step(3, 'action'), 'Anotar en la meta');
+  await b.fill(step(3, 'expected'), 'Queda dentro');
+  await b.waitForTimeout(300);
+  await shotBoth(b, '29-ruta', false);
+  await b.click('[data-testid=route-done]');
+  await b.evaluate(() => scrollTo(0, 0));
+  await shotBoth(b, '30-editor-ruta');
+  await b.click('[data-testid=editor-done]');
+  await until('ruta de 3 pasos en el servidor (plan de autónomo)', async () =>
+    (await liveEntries()).find((e) => e.kind === 'autonomousPlan' && e.elements.some((x) => x.type === 'route' && x.points.length === 3 && x.points[1]?.points === '3' && (x.points[2]?.x ?? 0) > 0.72)),
+  );
+  log('B: ruta del autónomo de 3 pasos dibujada sobre el campo (uno movido) con sus acciones');
+
   // B edita una entrada de A (la foto sin clasificar).
   await b.click('[data-testid=filter-todo]');
   await b.locator('.card', { hasText: 'Capturado sin señal' }).click();
@@ -631,6 +658,8 @@ try {
   assert(tour && tour.includes('PARTIDOS') && tour.includes('Q13') && tour.includes('Se salió la cadena del intake'), 'la página de registro de torneo trae los partidos');
   assert(slides.some((x) => x.includes('Subimos la tensión de la cadena') && x.includes('Registro de cambios')), 'lo que se ajustó en el torneo llega al registro de cambios');
   assert(slides.some((x) => x.includes('Lluvia de ideas') && x.includes('<p:pic>')), 'el boceto llega a la lluvia de ideas');
+  const auton = slideWith('Tomar el objeto del centro');
+  assert(auton && auton.includes('<a:srcRect') && (auton.match(/prst="ellipse"/g) ?? []).length === 3 && (auton.match(/straightConnector1/g) ?? []).length === 2, 'la ruta sale sobre el mapa del campo con puntos y flechas, y la tabla de pasos llena');
   log(`PC: en el .pptx están la foto anotada (formas), el registro de torneo, el ajuste en el registro de cambios y el boceto (${slides.length} diapositivas)`);
   log(`PC: bitácora generada en el navegador (${(bytes.length / 1024).toFixed(0)} KB): ${await d.textContent('[data-testid=generate-report]')}`);
   await d.locator('.desk .card').first().click();

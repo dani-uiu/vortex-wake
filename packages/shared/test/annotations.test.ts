@@ -85,6 +85,27 @@ describe('anotaciones de fotos', () => {
     expect(r.photoIds).toEqual(['boceto1']);
   });
 
+  it('ruta del autónomo: mapa del campo con puntos numerados y flechas; pasos en la tabla', () => {
+    const points = [
+      { id: 'a', x: 0.1, y: 0.9, action: 'Salir' },
+      { id: 'b', x: 0.5, y: 0.5, action: 'Tomar', points: '3' },
+    ];
+    const e = entry({ kind: 'autonomousPlan', section: 'strategy', elements: [{ id: 'r', type: 'route', points }] });
+    expect(checkEntry(e)).toBeUndefined();
+    expect(checkEntry({ ...e, elements: [{ id: 'r', type: 'route', points: [{ id: 'x', x: 1.5, y: 0 }] }] })).toBe('punto de ruta inválido');
+    const r = assembleNotebook({ team, sessions: [], entries: [e] });
+    const page = r.document.pages[0];
+    expect(page?.fields?.steps).toEqual([
+      ['1', 'Salir', '', ''],
+      ['2', 'Tomar', '', '3'],
+    ]);
+    expect(page?.fields?.path).toEqual({
+      images: [{ src: 'template:field', marks: [{ kind: 'arrow', x: 0.1, y: 0.9, tx: 0.5, ty: 0.5 }, { kind: 'label', text: '1', x: 0.1, y: 0.9 }, { kind: 'label', text: '2', x: 0.5, y: 0.5 }] }],
+    });
+    expect(r.photoIds).toEqual([]);
+    expect(validateNotebook(r.document).ok).toBe(true);
+  });
+
   it('el documento rechaza marcas inválidas', () => {
     const r = assembleNotebook({ team, sessions: [], entries: [entry({ kind: 'mechanism', section: 'mechanics' })] });
     const doc = structuredClone(r.document);

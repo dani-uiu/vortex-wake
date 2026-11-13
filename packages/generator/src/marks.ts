@@ -48,12 +48,21 @@ export function marksXml(marks: ImageMark[], box: BoxPt, lang: string, nextId: (
   };
   const arrows: string[] = [];
   const labels: string[] = [];
+  // Una flecha que sale o llega al centro de un círculo (la ruta del autónomo) empieza y termina en su borde.
+  const onLabel = (fx: number, fy: number) => marks.some((l) => l.kind === 'label' && Math.abs(l.x - fx) < 1e-6 && Math.abs(l.y - fy) < 1e-6);
   for (const m of marks) {
     if (m.kind === 'arrow') {
       if (m.tx === undefined || m.ty === undefined) continue;
-      const a = at(m.x, m.y);
-      const b = at(m.tx, m.ty);
-      if (Math.hypot(b.x - a.x, b.y - a.y) < 4) continue;
+      let a = at(m.x, m.y);
+      let b = at(m.tx, m.ty);
+      const d = Math.hypot(b.x - a.x, b.y - a.y);
+      const trimA = onLabel(m.x, m.y) ? r + 1 : 0;
+      const trimB = onLabel(m.tx, m.ty) ? r + 1 : 0;
+      if (d - trimA - trimB < 4) continue;
+      const ux = (b.x - a.x) / d;
+      const uy = (b.y - a.y) / d;
+      a = { x: a.x + ux * trimA, y: a.y + uy * trimA };
+      b = { x: b.x - ux * trimB, y: b.y - uy * trimB };
       arrows.push(connector({ x1: a.x, y1: a.y, x2: b.x, y2: b.y }, s, nextId(), 'Flecha'));
       continue;
     }

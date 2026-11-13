@@ -50,6 +50,7 @@
 import {
   ENTRY_KINDS,
   ENTRY_MARKS,
+  MAX_ROUTE_POINTS,
   TEAM_FORMAT,
   initialsOf,
   slugify,
@@ -261,6 +262,12 @@ function checkElement(el: unknown): string | undefined {
       return Array.isArray(el.trials) && el.trials.every((t) => isObj(t) && typeof t.ok === 'boolean' && isStr(t.at) && optStr(t.note))
         ? undefined
         : 'contador de pruebas inválido';
+    case 'route':
+      if (!Array.isArray(el.points) || el.points.length > MAX_ROUTE_POINTS) return 'ruta inválida';
+      for (const p of el.points) {
+        if (!isObj(p) || !isStr(p.id) || !isUnit(p.x) || !isUnit(p.y) || !optNote(p.action) || !optNote(p.expected) || !optNote(p.points)) return 'punto de ruta inválido';
+      }
+      return undefined;
     case 'match': {
       const texts = [el.partner, el.opponents, el.ourScore, el.theirScore, el.failed, el.adjusted];
       if (!isStr(el.match) || el.match.length > MAX_NAME_LENGTH || !texts.every(optNote)) return 'partido inválido';

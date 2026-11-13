@@ -70,6 +70,16 @@ export interface ImageRef {
 export const TEMPLATE_FIELD_IMAGE = 'template:field';
 
 /**
+ * El mapa del campo: imagen de fondo (página completa) de la página "Campo en
+ * blanco" de la plantilla, y el cuadro del campo dentro de ella (pixeles). La
+ * app muestra ese mismo recorte (`public/field.png`) para dibujar la ruta, así
+ * que las coordenadas (0 a 1 dentro del cuadro) coinciden con la bitácora.
+ * Si cambia la plantilla de temporada, se vuelve a medir (ver
+ * `packages/app/scripts/extract-field.ts`).
+ */
+export const FIELD_IMAGE = { width: 1583, height: 2048, crop: { x: 213, y: 447, width: 1157, height: 1157 } } as const;
+
+/**
  * Marca sobre una imagen, en coordenadas relativas (0 a 1).
  * - `label`: un círculo con texto ("A", "3") en (x, y); si trae (tx, ty), una
  *   flecha del círculo a ese punto.

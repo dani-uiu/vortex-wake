@@ -230,6 +230,13 @@
       }
     }
   },
+  "templateImages": {
+    "field": {
+      "$comment": "Página 'Campo en blanco' de Estrategia: su imagen de fondo (en el patrón) es el mapa del campo. El recorte está en @vortex-wake/shared (FIELD_IMAGE).",
+      "section": "strategy",
+      "shapes": ["Google Shape;355;p38", "Google Shape;356;p38", "Google Shape;357;p38", "Google Shape;358;p38", "Google Shape;359;p38", "Google Shape;360;p38", "Google Shape;361;p38", "Google Shape;362;p38", "Google Shape;363;p38", "Google Shape;364;p38", "Google Shape;365;p38", "Google Shape;366;p38", "Google Shape;367;p38", "Google Shape;368;p38", "Google Shape;369;p38"]
+    }
+  },
   "fixedPages": {
     "cover": {
       "section": "common",

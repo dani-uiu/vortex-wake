@@ -22,6 +22,7 @@ import {
   MATCH_RESULT_LABELS,
   initialsOf,
   type MatchElement,
+  type RoutePoint,
   type CaptureSession,
   type Entry,
   type EntryElement,
@@ -36,6 +37,7 @@ import {
   NOTEBOOK_FORMAT,
   NOTEBOOK_VERSION,
   PAGE_TYPES,
+  TEMPLATE_FIELD_IMAGE,
   type AreaContent,
   type ChangeRecord,
   type CreditRecord,
@@ -206,6 +208,7 @@ export function assembleNotebook(input: AssembleInput): AssembleResult {
     let trialNumber = 0;
     const labelItems: { label: PhotoLabel; photo: number }[] = [];
     const matchChanges: (ChangeRecord & { date: IsoDate })[] = [];
+    const routeRows: string[][] = [];
     for (const e of g.entries) {
       const parts: string[] = [];
       for (const el of e.elements) {
@@ -227,6 +230,14 @@ export function assembleNotebook(input: AssembleInput): AssembleResult {
               for (const r of el.rows) tableRows.push(fitRow(r, tableColumns));
             } else parts.push(tableText(el));
             break;
+          case 'route': {
+            if (el.points.length === 0) break;
+            images.push({ src: TEMPLATE_FIELD_IMAGE, marks: routeMarks(el.points) });
+            const rows = el.points.map((p, i) => [String(i + 1), p.action?.trim() ?? '', p.expected?.trim() ?? '', p.points?.trim() ?? '']);
+            if (plan.table === 'steps') routeRows.push(...rows);
+            else parts.push(rows.map((r) => r.filter((c) => c).join('. ')).join('\n'));
+            break;
+          }
           case 'match': {
             const row = matchRow(el);
             if (plan.table === 'matches') tableRows.push(row);
@@ -257,6 +268,8 @@ export function assembleNotebook(input: AssembleInput): AssembleResult {
     }
 
     // Etiquetas de las fotos anotadas → tabla de etiquetas (o texto).
+    // Pasos de la ruta (en orden) → tabla de pasos del plan de autónomo, antes de las tablas capturadas.
+    if (routeRows.length > 0) tableRows.unshift(...routeRows);
     const labelRows = labelTableRows(labelItems, plan.labels?.layout);
     if (plan.labels) tableRows.unshift(...labelRows);
     else if (labelRows.length > 0) texts.push(labelRows.map((r) => r.filter((c) => c.trim()).join(' · ')).join('\n'));
@@ -374,6 +387,18 @@ export function matchRow(m: MatchElement): string[] {
     .join(' ');
   const score = [m.ourScore?.trim() || m.theirScore?.trim() ? `${m.ourScore?.trim() || '?'}-${m.theirScore?.trim() || '?'}` : '', m.result ? MATCH_RESULT_LABELS[m.result] : ''].filter((s) => s).join(' · ');
   return [m.match.trim(), alliance, score, m.failed?.trim() ?? '', m.adjusted?.trim() ?? ''];
+}
+
+/** Ruta → marcas: una flecha de cada punto al siguiente y un círculo numerado en cada punto. */
+export function routeMarks(points: RoutePoint[]): ImageMark[] {
+  const out: ImageMark[] = [];
+  for (let i = 0; i + 1 < points.length; i++) {
+    const a = points[i] as RoutePoint;
+    const b = points[i + 1] as RoutePoint;
+    out.push({ kind: 'arrow', x: a.x, y: a.y, tx: b.x, ty: b.y });
+  }
+  points.forEach((p, i) => out.push({ kind: 'label', text: String(i + 1), x: p.x, y: p.y }));
+  return out;
 }
 
 /** Anotaciones de la foto → marcas que el generador dibuja como formas. */
