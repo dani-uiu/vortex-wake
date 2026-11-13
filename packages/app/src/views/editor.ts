@@ -36,7 +36,7 @@ import {
 import type { App } from '../app.ts';
 import type { Classification } from '../app.ts';
 import { WHAT_OPTIONS, applyWhat, exactLabel, setTarget, targetLabel, whatOf } from '../classify.ts';
-import { autosize, debounce, h, icon, openSheet, setChildren, timeOf, toast } from '../ui.ts';
+import { autosize, dateLabel, debounce, h, icon, openSheet, setChildren, timeOf, toast } from '../ui.ts';
 import { openAnnotator } from './annotate.ts';
 import { fieldView, openRouteEditor } from './route.ts';
 import { openSketch } from './sketch.ts';
@@ -64,8 +64,11 @@ export function renderEditor(root: HTMLElement, app: App, id: string, onDone: ()
     return () => {};
   }
   let entry: Entry = structuredClone(found);
+  /** En el celular, lo de hace más de un día solo se ve (se corrige en la computadora). */
+  const readOnly = !desk && !app.canEditEntry(found);
   let saving = Promise.resolve();
   const persist = () => {
+    if (readOnly) return;
     const snapshot = structuredClone(entry);
     saving = saving.then(() => app.saveEntry(snapshot).then((s) => void (entry.updatedAt = s.updatedAt)));
   };
@@ -166,7 +169,19 @@ export function renderEditor(root: HTMLElement, app: App, id: string, onDone: ()
     'Borrar entrada',
   );
 
-  root.replaceChildren(
+  if (readOnly) {
+    // Todo se ve, nada se cambia: los controles van en un <fieldset disabled>.
+    root.replaceChildren(
+      head,
+      h(
+        'div',
+        { class: 'editor simple read-only', 'data-testid': 'editor-read-only' },
+        h('p', { class: 'day-edit locked', role: 'note' }, icon('lock', 'icon sm'), `Entrada del ${dateLabel(entry.sessionDate)}: solo se puede ver. Desde el celular se corrigen las de hoy y ayer; las demás, en la vista de computadora.`),
+        h('fieldset', { class: 'ro-fieldset', disabled: true }, elementsBox, h('h2', { class: 'section-title', text: 'Clasificación' }), classBox),
+        h('div', { class: 'editor-end' }, h('button', { class: 'btn primary big', type: 'button', onclick: onDone }, 'Volver')),
+      ),
+    );
+  } else root.replaceChildren(
     head,
     h(
       'div',

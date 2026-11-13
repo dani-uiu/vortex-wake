@@ -144,6 +144,23 @@ describe('contrato y mezcla (D1)', () => {
     expect(s.entries.find((e) => e.id === 'carrera')?.thread).toBe('v11');
   });
 
+  it('con la clave de captura no se editan entradas de hace más de un día; con la de edición sí', async () => {
+    const old = entry({ id: 'vieja', sessionDate: '2026-11-01', createdAt: '2026-11-01T16:00:00.000Z', updatedAt: '2026-11-01T16:00:00.000Z' });
+    expect((await put(apiPath.entry(old.id), old)).status).toBe(200);
+    const late = { ...old, updatedAt: '2026-11-05T16:00:00.000Z', thread: 'tarde' };
+    const r = await put(apiPath.entry(old.id), late);
+    expect(r.status).toBe(403);
+    expect((await put(apiPath.entry(old.id), late, w.editKey)).status).toBe(200);
+    const nextDay = entry({ id: 'ayer', sessionDate: '2026-11-01', createdAt: '2026-11-01T16:00:00.000Z', updatedAt: '2026-11-02T23:00:00.000Z' });
+    expect((await put(apiPath.entry(nextDay.id), nextDay)).status).toBe(200);
+  });
+
+  it('resumen por día para el calendario', async () => {
+    const days = ((await (await call(apiPath.days())).json()) as { days: { date: string; entries: number }[] }).days;
+    expect(days.find((d) => d.date === '2026-11-01')?.entries).toBe(2);
+    expect(days.find((d) => d.date === '2026-11-12')?.entries).toBeGreaterThan(0);
+  });
+
   it('rechaza entradas inválidas', async () => {
     expect((await put(apiPath.entry('mala'), { ...entry({ id: 'mala' }), section: 'cocina' })).status).toBe(400);
     expect((await put(apiPath.entry('mala'), entry({ id: 'otra' }))).status).toBe(400);

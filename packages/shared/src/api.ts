@@ -36,6 +36,11 @@
  * | GET  /api/template                     | —                 | plantilla .pptx     |
  * | GET  /api/qr                           | —                 | QrResponse          |
  * | PUT  /api/tasks/:id                    | TaskItem          | PutTaskResponse     |
+ * | GET  /api/days                         | —                 | DaysResponse        |
+ *
+ * `/api/days` es el resumen por día para el calendario de la captura (días con
+ * entradas, asistencia o cierre). Con la clave de captura, `PUT /api/entries`
+ * rechaza (403) cambios a entradas de hace más de un día (`captureEditAllowed`).
  *
  * Pendientes: gana el de `updatedAt` más reciente (como las entradas). Van en
  * `StateResponse.tasks` (todos, también con `?date=`). Con `?date=` también
@@ -168,6 +173,7 @@ export const apiPath = {
   template: () => '/api/template',
   qr: () => '/api/qr',
   task: (id: string) => `/api/tasks/${encodeURIComponent(id)}`,
+  days: () => '/api/days',
 };
 
 /** Fecha `AAAA-MM-DD` de `days` días antes de `date`. */
@@ -175,6 +181,59 @@ export function daysBefore(date: string, days: number): string {
   const d = new Date(`${date}T12:00:00Z`);
   d.setUTCDate(d.getUTCDate() - days);
   return d.toISOString().slice(0, 10);
+}
+
+// --- Días pasados ---------------------------------------------------------------
+
+/**
+ * En la captura (celular) se corrigen las entradas de hoy y de ayer; las más
+ * viejas solo se ven. La vista de computadora (clave de edición) sí las edita.
+ */
+export function canEditDay(sessionDate: string, today: string): boolean {
+  return sessionDate >= daysBefore(today, 1) && sessionDate <= today;
+}
+
+/**
+ * Lo mismo, revisado en el servidor para la clave de captura. Se usa la hora
+ * en que se editó (`updatedAt`, del teléfono) y no la del servidor, para que
+ * lo editado sin conexión no se rechace al llegar tarde; con margen por la
+ * zona horaria (el día de la sesión es local y `updatedAt` es UTC).
+ */
+export function captureEditAllowed(entry: Pick<Entry, 'sessionDate' | 'updatedAt'>): boolean {
+  return Date.parse(entry.updatedAt) < Date.parse(`${entry.sessionDate}T00:00:00Z`) + 3 * 86_400_000;
+}
+
+export const CAPTURE_EDIT_EXPIRED = 'esa entrada ya no se puede editar desde el celular (solo las de hoy y ayer); se corrige en la vista de computadora';
+
+/** Un día en el calendario de la captura. */
+export interface DaySummary {
+  date: string;
+  /** Entradas (sin las borradas). */
+  entries: number;
+  /** Personas que registraron asistencia. */
+  present: number;
+  closed: boolean;
+}
+
+export interface DaysResponse {
+  days: DaySummary[];
+}
+
+/** Junta sesiones y conteos de entradas en el resumen por día (ordenado por fecha). */
+export function summarizeDays(sessions: Iterable<CaptureSession>, entryCounts: Iterable<[string, number]>): DaySummary[] {
+  const map = new Map<string, DaySummary>();
+  const get = (date: string) => {
+    let d = map.get(date);
+    if (!d) map.set(date, (d = { date, entries: 0, present: 0, closed: false }));
+    return d;
+  };
+  for (const s of sessions) {
+    const d = get(s.date);
+    d.present = s.attendance.length;
+    d.closed = !!s.closing && !!(s.closing.whatWeDid?.trim() || s.closing.whatFailed?.trim() || s.closing.whatsNext?.trim());
+  }
+  for (const [date, n] of entryCounts) get(date).entries += n;
+  return [...map.values()].filter((d) => d.entries > 0 || d.present > 0 || d.closed).sort((a, b) => (a.date < b.date ? -1 : 1));
 }
 
 // --- Mezcla -------------------------------------------------------------------

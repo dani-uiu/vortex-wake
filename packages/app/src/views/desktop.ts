@@ -220,6 +220,8 @@ export function renderDesktop(root: HTMLElement, app: App, go: (hash: string) =>
             h('span', { class: 'muted small', text: `${list.length} entradas` }),
             todo > 0 && !onlyTodo ? h('span', { class: 'tag todo', text: `${todo} sin clasificar` }) : null,
             d < app.today && !hasClosing(c) ? h('a', { class: 'tag todo', href: `#/cierre/${d}?desde=escritorio`, 'data-testid': 'desk-no-closing', title: 'Llenar el cierre de esta sesión', text: 'Sin cierre' }) : null,
+            // Con la clave de edición, el cierre de cualquier día se corrige aquí.
+            hasClosing(c) ? h('a', { class: 'chip-btn day-closing-edit', href: `#/cierre/${d}?desde=escritorio`, 'data-testid': 'desk-edit-closing', 'data-date': d }, icon('edit', 'icon sm'), 'Editar cierre') : null,
           ),
           present ? h('p', { class: 'muted small', text: `Presentes: ${present}` }) : null,
           c && (c.whatWeDid || c.whatFailed || c.whatsNext)

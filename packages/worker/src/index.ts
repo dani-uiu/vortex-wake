@@ -18,7 +18,10 @@ import {
   audioType,
   TEAM_KEY_QUERY,
   RECENT_SESSION_DAYS,
+  CAPTURE_EDIT_EXPIRED,
+  captureEditAllowed,
   daysBefore,
+  type DaysResponse,
   checkAttendance,
   checkClosing,
   checkEntry,
@@ -124,6 +127,10 @@ async function api(req: Request, env: Env, url: URL): Promise<Response> {
   const store = new D1Store(env.DB);
 
   if (method === 'GET' && p === '/api/state') return state(store, url, access);
+  if (method === 'GET' && p === '/api/days') {
+    const body: DaysResponse = { days: await store.daySummaries() };
+    return json(200, body);
+  }
 
   if (method === 'PUT' && p === '/api/team') {
     needEdit();
@@ -145,6 +152,8 @@ async function api(req: Request, env: Env, url: URL): Promise<Response> {
     const err = checkEntry(entry);
     if (err) throw new HttpError(400, err);
     if ((entry as Entry).id !== safeDecode(m[1] as string)) throw new HttpError(400, 'el id no coincide con la ruta');
+    // El celular corrige solo lo de hoy y ayer; lo demás, la vista de computadora.
+    if (access === 'capture' && !captureEditAllowed(entry as Entry)) throw new HttpError(403, CAPTURE_EDIT_EXPIRED);
     return json(200, await store.putEntry(entry as Entry));
   }
 

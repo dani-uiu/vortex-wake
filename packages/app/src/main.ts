@@ -1,5 +1,5 @@
 /**
- * Arranque y rutas (#/, #/quien, #/entrada/<id>, #/cierre, #/escritorio, #/qr).
+ * Arranque y rutas (#/, #/quien, #/entrada/<id>, #/dia/<fecha>, #/cierre, #/escritorio, #/qr).
  *
  * Por HTTP en la red local no hay contexto seguro: no se usan service worker,
  * instalación como PWA ni getUserMedia. La cámara es un <input capture> y todo
@@ -13,6 +13,7 @@ import { LocalDb } from './db.ts';
 import { setupServiceWorker } from './pwa.ts';
 import { h, hideToast } from './ui.ts';
 import { renderDesktop, renderNeedsEditKey, renderQr } from './views/desktop.ts';
+import { renderDay } from './views/days.ts';
 import { renderEditor } from './views/editor.ts';
 import { renderClosing, renderHome, renderNoKey, renderWho } from './views/home.ts';
 
@@ -66,16 +67,26 @@ async function boot(): Promise<void> {
       return;
     }
     // El cierre de un día pasado se puede llenar desde la computadora sin elegir persona.
-    const pastClosing = /^#\/cierre\/(\d{4}-\d{2}-\d{2})(\?desde=escritorio)?$/.exec(hash);
+    const pastClosing = /^#\/cierre\/(\d{4}-\d{2}-\d{2})(\?desde=(escritorio|dia))?$/.exec(hash);
     if (pastClosing) {
-      const back = pastClosing[2] ? '#/escritorio' : '#/';
-      cleanup = renderClosing(root, app, go, pastClosing[1] as string, back);
+      const date = pastClosing[1] as string;
+      const back = pastClosing[3] === 'escritorio' ? '#/escritorio' : pastClosing[3] === 'dia' ? `#/dia/${date}` : '#/';
+      cleanup = renderClosing(root, app, go, date, back);
       return;
     }
     if (!app.me && hash !== '#/quien') return go('#/quien');
+    const day = /^#\/dia\/(\d{4}-\d{2}-\d{2})$/.exec(hash);
+    if (day) {
+      cleanup = renderDay(root, app, go, day[1] as string);
+      return;
+    }
     const m = /^#\/entrada\/(.+)$/.exec(hash);
-    if (m) cleanup = renderEditor(root, app, decodeURIComponent(m[1] as string), () => go('#/'));
-    else if (hash === '#/quien') cleanup = renderWho(root, app, go);
+    if (m) {
+      const id = decodeURIComponent(m[1] as string);
+      // Una entrada de otro día vuelve a ese día, no al inicio.
+      const date = app.entries.get(id)?.sessionDate;
+      cleanup = renderEditor(root, app, id, () => go(date && date < app.today ? `#/dia/${date}` : '#/'));
+    } else if (hash === '#/quien') cleanup = renderWho(root, app, go);
     else if (hash === '#/cierre') cleanup = renderClosing(root, app, go);
     else cleanup = renderHome(root, app, go);
   };

@@ -1,4 +1,5 @@
-import { isUnclassified, newId, type EntryElement } from '@vortex-wake/shared';
+import { daysBefore, isUnclassified, newId, type EntryElement } from '@vortex-wake/shared';
+import { openCalendar } from './days.ts';
 import type { App } from '../app.ts';
 import { BUILD_LABEL } from '../pwa.ts';
 import { dateLabel, h, icon, openSheet, setChildren, toast } from '../ui.ts';
@@ -149,6 +150,12 @@ export function renderHome(root: HTMLElement, app: App, go: (hash: string) => vo
         { class: 'meta-row' },
         h('span', { class: 'present muted', text: present.length > 0 ? `Presentes: ${present.map((id) => app.memberName(id).split(' ')[0]).join(', ')}` : 'Nadie ha registrado asistencia' }),
         quiet ? sync : null,
+      ),
+      h(
+        'div',
+        { class: 'meta-row' },
+        h('button', { class: 'chip-btn', type: 'button', 'data-testid': 'open-calendar', onclick: () => openCalendar(app, go) }, icon('calendar', 'icon sm'), 'Días pasados'),
+        h('button', { class: 'link-muted day-yesterday', type: 'button', 'data-testid': 'go-yesterday', onclick: () => go(`#/dia/${daysBefore(today, 1)}`) }, 'Ayer'),
       ),
     );
     setChildren(banner, quiet ? null : sync);

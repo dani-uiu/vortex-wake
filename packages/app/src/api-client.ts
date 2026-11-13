@@ -5,6 +5,7 @@ import {
   TEAM_KEY_QUERY,
   apiPath,
   type Attendance,
+  type DaysResponse,
   type Entry,
   type PutEntryResponse,
   type PutTaskResponse,
@@ -68,6 +69,9 @@ export class ApiClient implements Transport {
 
   state(date?: string): Promise<StateResponse> {
     return this.json<StateResponse>(apiPath.state(date), 'GET');
+  }
+  days(): Promise<DaysResponse> {
+    return this.json<DaysResponse>(apiPath.days(), 'GET');
   }
   putEntry(entry: Entry): Promise<PutEntryResponse> {
     return this.json<PutEntryResponse>(apiPath.entry(entry.id), 'PUT', entry);

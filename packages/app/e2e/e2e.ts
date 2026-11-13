@@ -744,6 +744,58 @@ try {
   await ctxG.close();
   log('Notas de voz: en Firefox el micrófono graba; con reconocimiento se elige transcribir o solo grabar; mapas del Brain y del control en la entrada');
 
+  // --- Días pasados en el celular: calendario; ayer se corrige, antes solo se ve --------
+  const seed = async (id: string, date: string, text: string) => {
+    const at = new Date(`${date}T18:00:00Z`).toISOString();
+    const e: Entry = { id, sessionDate: date, createdAt: at, updatedAt: at, authorIds: ['beto'], marks: [], elements: [{ id: `${id}-t`, type: 'text', text }] };
+    const r = await fetch(backend.deskBase + apiPath.entry(id), { method: 'PUT', headers: { 'x-team-key': backend.editKey, 'content-type': 'application/json' }, body: JSON.stringify(e) });
+    assert(r.ok, `entrada sembrada del ${date}`);
+  };
+  await seed('pasada-vieja', THREE_AGO, 'Armamos la base del chasis');
+  await seed('pasada-ayer', YESTERDAY, 'Calibramos el giroscopio');
+  const ctxH = await browser.newContext(phone);
+  const hh = await ctxH.newPage();
+  watch(hh, 'H');
+  await hh.goto(backend.captureLink());
+  await hh.waitForSelector('[data-testid=who-select]');
+  await hh.selectOption('[data-testid=who-select]', 'beto');
+  await hh.click('[data-testid=who-enter]');
+  await hh.click('[data-testid=open-calendar]');
+  await hh.waitForSelector('[data-testid=sheet-calendar]');
+  if (THREE_AGO.slice(0, 7) !== mxDate().slice(0, 7)) await hh.click('[data-testid=cal-prev]');
+  await until('el calendario marca el día con entradas', async () => (await hh.locator(`.cal-day.has[data-date="${THREE_AGO}"]`).count()) === 1);
+  assert(await hh.locator(`.cal-day[data-date="${mxDate(1)}"]`).evaluateAll((els) => els.every((e) => (e as HTMLButtonElement).disabled)), 'los días futuros no se eligen');
+  await hh.waitForTimeout(300);
+  await shotBoth(hh, '33-calendario', false);
+  await hh.click(`.cal-day[data-date="${THREE_AGO}"]`);
+  await hh.waitForSelector('[data-testid=day-title]');
+  await until('se ve la entrada de hace tres días', async () => (await hh.locator('[data-testid=day-list] .card, [data-testid=day-list] [data-entry]').count()) > 0 || ((await hh.textContent('[data-testid=day-list]')) ?? '').includes('chasis'));
+  assert(((await hh.textContent('[data-testid=day-edit]')) ?? '').includes('Solo lectura'), 'el día de hace tres días es de solo lectura');
+  await shotBoth(hh, '34-dia-pasado', false);
+  await hh.locator('[data-testid=day-list]').getByText('chasis').click();
+  await hh.waitForSelector('[data-testid=editor-read-only]');
+  assert(await hh.locator('[data-testid=text-input]').isDisabled(), 'la entrada vieja no se puede editar');
+  assert((await hh.locator('[data-testid=editor-add]').count()) === 0, 'ni agregarle cosas');
+  await hh.click('[data-testid=editor-done]');
+  await hh.waitForSelector('[data-testid=day-title]');
+  assert(hh.url().includes(`#/dia/${THREE_AGO}`), 'al salir vuelve al día');
+  // Ayer sí se corrige (con flechas de día en día).
+  await hh.click('[data-testid=day-next]');
+  await hh.click('[data-testid=day-next]');
+  await until('llega a ayer', async () => hh.url().includes(`#/dia/${YESTERDAY}`));
+  assert(((await hh.textContent('[data-testid=day-edit]')) ?? '').includes('corregir'), 'ayer se puede corregir');
+  await until('se ve la entrada de ayer', async () => ((await hh.textContent('[data-testid=day-list]')) ?? '').includes('giroscopio'));
+  await hh.locator('[data-testid=day-list]').getByText('giroscopio').click();
+  await hh.waitForSelector('[data-testid=text-input]');
+  assert((await hh.locator('[data-testid=editor-read-only]').count()) === 0, 'la de ayer se abre para editar');
+  await hh.fill('[data-testid=text-input]', 'Calibramos el giroscopio (corregido)');
+  await hh.click('[data-testid=editor-done]');
+  await until('la corrección de ayer llega al servidor', async () => (await liveEntries()).some((e) => e.id === 'pasada-ayer' && e.elements.some((x) => x.type === 'text' && x.text.includes('corregido'))));
+  await hh.click('[data-testid=day-next]');
+  await hh.waitForSelector('[data-testid=new-text]');
+  await ctxH.close();
+  log('Días pasados: calendario con los días capturados; ayer se corrige y lo de antes solo se ve');
+
   if (NUBE) {
     // Con la clave de captura no se entra a la vista de computadora ni al QR.
     await b.goto(`${base}/#/escritorio`);
@@ -770,6 +822,19 @@ try {
   await shotBoth(d, '31-escritorio-sin-cierre', false);
   await d.locator('.side-item').first().click();
   log('PC: la sesión de hace tres días se marca "sin cierre"');
+
+  // Editar el cierre de un día desde la computadora.
+  await d.waitForSelector('[data-testid=desk-edit-closing]');
+  const closingDate = await d.getAttribute('[data-testid=desk-edit-closing] >> nth=0', 'data-date');
+  await d.click('[data-testid=desk-edit-closing] >> nth=0');
+  await d.waitForSelector('[data-testid=closing-did]');
+  const didBefore = await d.inputValue('[data-testid=closing-did]');
+  await d.fill('[data-testid=closing-did]', `${didBefore} (corregido en la computadora)`);
+  await d.click('[data-testid=closing-save]');
+  await d.waitForSelector('[data-testid=desk-edit-closing]');
+  assert(d.url().includes('#/escritorio'), 'al guardar el cierre vuelve a la vista de computadora');
+  await until('el cierre corregido llega al servidor', async () => (await backend.sessions()).some((s) => s.date === closingDate && (s.closing?.whatWeDid ?? '').includes('corregido en la computadora')));
+  log('PC: el cierre de un día se corrige desde la vista de computadora');
 
   // Mapas de puertos y del control del Robot A (computadora), con historial.
   const fillMap = async (kind: 'ports' | 'controller', values: Record<string, string>) => {

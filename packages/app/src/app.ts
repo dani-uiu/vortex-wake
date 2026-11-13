@@ -5,7 +5,10 @@
 
 import {
   audioType,
+  canEditDay,
   closingNudge,
+  summarizeDays,
+  type DaySummary,
   emptySession,
   later,
   type ClosingNudge,
@@ -241,6 +244,45 @@ export class App {
       } else console.error(e);
     }
     this.emit();
+  }
+
+  /**
+   * Trae del servidor lo de un día pasado (entradas, sesión). Sin conexión se
+   * queda con lo que ya hay en el teléfono. Devuelve si se pudo traer.
+   */
+  async loadDay(date: string): Promise<boolean> {
+    try {
+      const s = await this.api.state(date);
+      await this.applyServerState(s.team, s.sessions, s.entries);
+      this.emit();
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Resumen por día para el calendario: el del servidor (todos los días) más
+   * lo que hay en este teléfono, por si no hay conexión o falta mandar algo.
+   */
+  async daySummaries(): Promise<{ days: Map<string, DaySummary>; online: boolean }> {
+    const counts = new Map<string, number>();
+    for (const e of this.entries.values()) if (!e.deleted) counts.set(e.sessionDate, (counts.get(e.sessionDate) ?? 0) + 1);
+    const days = new Map(summarizeDays(this.sessions.values(), counts).map((d) => [d.date, d]));
+    try {
+      for (const d of (await this.api.days()).days) {
+        const local = days.get(d.date);
+        days.set(d.date, local ? { date: d.date, entries: Math.max(d.entries, local.entries), present: Math.max(d.present, local.present), closed: d.closed || local.closed } : d);
+      }
+      return { days, online: true };
+    } catch {
+      return { days, online: false };
+    }
+  }
+
+  /** En la captura se corrigen solo las entradas de hoy y de ayer (ver `canEditDay`). */
+  canEditEntry(e: Entry): boolean {
+    return canEditDay(e.sessionDate, this.today);
   }
 
   private async applyServerState(team: TeamConfig, sessions: CaptureSession[], entries: Entry[]): Promise<void> {

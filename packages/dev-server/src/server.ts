@@ -21,6 +21,8 @@ import {
   RECENT_SESSION_DAYS,
   addMemberToTeam,
   daysBefore,
+  summarizeDays,
+  type DaysResponse,
   checkAttendance,
   checkClosing,
   checkEntry,
@@ -116,6 +118,12 @@ export function startServer(opts: ServerOptions): Promise<RunningServer> {
         const from = daysBefore(date, RECENT_SESSION_DAYS);
         body.recentSessions = [...store.sessions.values()].filter((s) => s.date >= from && s.date < date).sort((a, b) => (a.date < b.date ? -1 : 1));
       }
+      return sendJson(res, 200, body);
+    }
+    if (method === 'GET' && p === '/api/days') {
+      const counts = new Map<string, number>();
+      for (const e of store.entries.values()) if (!e.deleted) counts.set(e.sessionDate, (counts.get(e.sessionDate) ?? 0) + 1);
+      const body: DaysResponse = { days: summarizeDays(store.sessions.values(), counts) };
       return sendJson(res, 200, body);
     }
     if (method === 'PUT' && p === '/api/team') {

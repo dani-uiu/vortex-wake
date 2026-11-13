@@ -17,6 +17,8 @@ import {
   mergeClosing,
   mergeEntry,
   mergeTask,
+  summarizeDays,
+  type DaySummary,
   type TaskItem,
   type Attendance,
   type CaptureSession,
@@ -185,6 +187,20 @@ export class D1Store {
   async sessionsBetweenJson(from: string, to: string): Promise<string> {
     const { results } = await this.db.prepare('SELECT json FROM sessions WHERE date >= ?1 AND date < ?2 ORDER BY date').bind(from, to).all<{ json: string }>();
     return `[${results.map((r) => r.json).join(',')}]`;
+  }
+
+  /** Para el calendario: sesiones y cuántas entradas (sin borrar) hay por día. */
+  async daySummaries(): Promise<DaySummary[]> {
+    const [sessions, counts] = await Promise.all([
+      this.db.prepare('SELECT json FROM sessions').all<{ json: string }>(),
+      this.db
+        .prepare("SELECT session_date AS date, COUNT(*) AS n FROM entries WHERE coalesce(json_extract(json, '$.deleted'), 0) = 0 GROUP BY session_date")
+        .all<{ date: string; n: number }>(),
+    ]);
+    return summarizeDays(
+      sessions.results.map((r) => JSON.parse(r.json) as CaptureSession),
+      counts.results.map((r) => [r.date, Number(r.n)] as [string, number]),
+    );
   }
 
   async entriesJson(date?: string): Promise<string> {
