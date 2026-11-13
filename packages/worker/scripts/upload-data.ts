@@ -30,9 +30,11 @@ import {
   checkAttendance,
   checkClosing,
   checkEntry,
+  checkTask,
   checkTeam,
   isJpegBytes,
   isValidDate,
+  type TaskItem,
   type CaptureSession,
   type Entry,
   type PutEntryResponse,
@@ -240,6 +242,25 @@ export async function uploadData(opts: UploadOptions): Promise<UploadReport> {
     }
   }
   log(`Entradas: ${report.entries.applied} enviadas (si ya estaban iguales no se duplican), ${report.entries.kept} ya tenían en la nube una versión más nueva (se quedó esa).`);
+
+  // --- pendientes (data/tasks, si existe) -------------------------------------------
+  let tasksSent = 0;
+  for (const f of list(join(dir, 'tasks'), '.json')) {
+    try {
+      const t = readJson(join(dir, 'tasks', f));
+      const err = checkTask(t);
+      if (err) {
+        report.invalid.push(`tasks/${f}: ${err}`);
+        continue;
+      }
+      await sendJson(apiPath.task((t as TaskItem).id), 'PUT', t);
+      tasksSent++;
+    } catch (err) {
+      if (err instanceof UploadError) throw err;
+      report.failed.push(`pendiente ${f}: ${(err as Error).message}`);
+    }
+  }
+  if (tasksSent > 0) log(`Pendientes: ${tasksSent} enviados.`);
   for (const f of report.failed) log(`  FALLÓ ${f}`);
   return report;
 }

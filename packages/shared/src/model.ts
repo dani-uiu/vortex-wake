@@ -74,6 +74,32 @@ export interface CaptureSession {
   closing?: SessionClosing;
 }
 
+// --- Pendientes ----------------------------------------------------------------------
+
+/**
+ * Un pendiente entre sesiones. Los que salen de "¿Qué sigue?" del cierre
+ * tienen un id que se calcula de la fecha y el texto del renglón
+ * (`closingTaskId`), así que dos teléfonos que guardan el mismo cierre no los
+ * duplican. Gana la versión con `updatedAt` más reciente, como las entradas.
+ */
+export interface TaskItem {
+  id: string;
+  text: string;
+  /** Día de la sesión en que se anotó. */
+  fromDate: IsoDate;
+  /** `closing`: un renglón de "¿Qué sigue?"; `manual`: se agregó a mano. */
+  source: 'closing' | 'manual';
+  createdAt: IsoDateTime;
+  updatedAt: IsoDateTime;
+  createdBy?: string;
+  /** Quién lo marcó como hecho y cuándo. */
+  done?: { by?: string; at: IsoDateTime };
+  /** Pospuesto: no se muestra antes de este día. */
+  snoozedUntil?: IsoDate;
+  /** Ya no aplica (o se quitó el renglón del cierre). */
+  deleted?: boolean;
+}
+
 // --- Micro-entradas ----------------------------------------------------------------
 
 /** Tipos de entrada: los tipos de página de la plantilla más "trabajo del día". */

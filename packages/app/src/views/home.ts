@@ -3,6 +3,7 @@ import type { App } from '../app.ts';
 import { BUILD_LABEL } from '../pwa.ts';
 import { dateLabel, h, icon, openSheet, setChildren, toast } from '../ui.ts';
 import { entryCard, photoButton, syncBadge } from './common.ts';
+import { openAddTask, tasksBlock } from './tasks.ts';
 
 type Filter = 'all' | 'todo' | 'mine';
 let filter: Filter = 'all';
@@ -55,6 +56,7 @@ export function renderHome(root: HTMLElement, app: App, go: (hash: string) => vo
         item('new-link', 'link', 'Enlace', 'link'),
         item('new-list', 'list', 'Lista', 'list'),
         item('new-table', 'table', 'Tabla', 'table'),
+        h('button', { class: 'sheet-item', type: 'button', 'data-testid': 'new-task', onclick: () => (sheet.close(), openAddTask(app)) }, icon('todo'), h('span', { text: 'Pendiente para otra sesión' })),
       ),
     );
   };
@@ -80,7 +82,8 @@ export function renderHome(root: HTMLElement, app: App, go: (hash: string) => vo
   );
 
   const banner = h('div', { class: 'sync-slot' });
-  root.replaceChildren(header, banner, actions, h('h2', { class: 'section-title', text: 'Hoy' }), filters, list, footer);
+  const tasksSlot = h('div', { class: 'tasks-slot' });
+  root.replaceChildren(header, banner, actions, tasksSlot, h('h2', { class: 'section-title', text: 'Hoy' }), filters, list, footer);
 
   const render = () => {
     const today = app.today;
@@ -107,6 +110,8 @@ export function renderHome(root: HTMLElement, app: App, go: (hash: string) => vo
       ),
     );
     setChildren(banner, quiet ? null : sync);
+    // Los pendientes no se repintan mientras se escribe o se usa uno (por si llega algo del servidor).
+    if (!tasksSlot.contains(document.activeElement)) setChildren(tasksSlot, tasksBlock(app));
 
     const all = app.liveEntries(today);
     const todo = all.filter(isUnclassified);

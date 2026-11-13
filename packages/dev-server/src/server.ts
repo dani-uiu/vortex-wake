@@ -20,9 +20,11 @@ import {
   checkAttendance,
   checkClosing,
   checkEntry,
+  checkTask,
   checkTeam,
   isJpegBytes,
   isValidDate,
+  type TaskItem,
   type AddMemberRequest,
   type Attendance,
   type Entry,
@@ -104,6 +106,7 @@ export function startServer(opts: ServerOptions): Promise<RunningServer> {
         sessions: [...store.sessions.values()].filter((s) => !date || s.date === date).sort((a, b) => (a.date < b.date ? -1 : 1)),
         entries: [...store.entries.values()].filter((e) => !date || e.sessionDate === date),
         serverTime: new Date().toISOString(),
+        tasks: [...store.tasks.values()],
       };
       return sendJson(res, 200, body);
     }
@@ -128,6 +131,15 @@ export function startServer(opts: ServerOptions): Promise<RunningServer> {
       if (err) throw new HttpError(400, err);
       if (entry.id !== decodeURIComponent(m[1] as string)) throw new HttpError(400, 'el id no coincide con la ruta');
       return sendJson(res, 200, store.putEntry(entry));
+    }
+
+    m = /^\/api\/tasks\/([^/]+)$/.exec(p);
+    if (m && method === 'PUT') {
+      const task = (await readJson(req)) as TaskItem;
+      const err = checkTask(task);
+      if (err) throw new HttpError(400, err);
+      if (task.id !== decodeURIComponent(m[1] as string)) throw new HttpError(400, 'el id no coincide con la ruta');
+      return sendJson(res, 200, store.putTask(task));
     }
 
     m = /^\/api\/photos\/([^/]+)$/.exec(p);

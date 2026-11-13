@@ -5,11 +5,16 @@
 
 import {
   emptySession,
+  later,
   localDate,
   mergeAttendance,
   mergeSessions,
   newId,
+  nextDay,
   slugify,
+  tasksFromClosing,
+  visibleTasks,
+  type TaskItem,
   type AccessLevel,
   type CaptureSession,
   type Entry,
@@ -112,6 +117,7 @@ export class App {
   me: string | undefined;
   readonly entries = new Map<string, Entry>();
   readonly sessions = new Map<string, CaptureSession>();
+  readonly tasks = new Map<string, TaskItem>();
   pendingKeys = new Map<string, string | undefined>();
   sync: SyncState = { online: undefined, pending: 0, unauthorized: false };
   /** Qué permite la clave de este teléfono (el servidor local no lo dice: permite todo). */
@@ -149,6 +155,7 @@ export class App {
     this.team = await this.db.getTeam();
     for (const e of await this.db.allEntries()) this.entries.set(e.id, e);
     for (const s of await this.db.allSessions()) this.sessions.set(s.date, s);
+    for (const t of await this.db.allTasks()) this.tasks.set(t.id, t);
     await this.refreshPending();
     await this.recoverPhotos();
     addEventListener('online', () => void this.tick(true));
@@ -219,6 +226,7 @@ export class App {
       lsSet(LS_ACCESS, this.access);
       lsSet(LS_HOSTED, this.hosted ? '1' : null);
       await this.applyServerState(s.team, s.sessions, s.entries);
+      await this.applyServerTasks(s.tasks ?? []);
     } catch (e) {
       if (e instanceof NetworkError) this.sync.online = false;
       else if (e instanceof HttpStatusError && e.status === 401) {
@@ -248,6 +256,66 @@ export class App {
         await this.db.putEntry(e);
       }
     }
+  }
+
+  private async applyServerTasks(tasks: TaskItem[]): Promise<void> {
+    for (const t of tasks) {
+      if (this.pendingKeys.has(`task:${t.id}`)) continue; // lo de aquí todavía no se manda
+      const local = this.tasks.get(t.id);
+      if (!local || t.updatedAt > local.updatedAt) {
+        this.tasks.set(t.id, t);
+        await this.db.putTask(t);
+      }
+    }
+  }
+
+  // --- pendientes ---------------------------------------------------------------------
+
+  /** Pendientes que se ven hoy (de cierres anteriores, a mano, sin pospuestos). */
+  visibleTasks(date = this.today): TaskItem[] {
+    return visibleTasks(this.tasks.values(), date, (iso) => localDate(new Date(iso)));
+  }
+
+  /** Guarda en el teléfono y anota el envío (como las entradas). */
+  async saveTask(task: TaskItem, emit = true): Promise<TaskItem> {
+    const prev = this.tasks.get(task.id);
+    const saved: TaskItem = { ...task, updatedAt: prev ? later(new Date().toISOString(), prev.updatedAt) : task.updatedAt };
+    await this.db.putTask(saved);
+    this.tasks.set(saved.id, saved);
+    await this.queue.enqueue({ kind: 'task', taskId: saved.id });
+    this.pendingKeys.set(`task:${saved.id}`, undefined);
+    if (emit) {
+      this.emit();
+      void this.flush();
+    }
+    return saved;
+  }
+
+  async addTask(text: string): Promise<TaskItem> {
+    const now = new Date().toISOString();
+    const t: TaskItem = { id: `m-${newId()}`, text: text.trim(), fromDate: this.today, source: 'manual', createdAt: now, updatedAt: now };
+    if (this.me) t.createdBy = this.me;
+    return this.saveTask(t);
+  }
+
+  async setTaskDone(id: string, done: boolean): Promise<void> {
+    const t = this.tasks.get(id);
+    if (!t) return;
+    const next = { ...t };
+    if (done) next.done = { at: new Date().toISOString(), ...(this.me ? { by: this.me } : {}) };
+    else delete next.done;
+    await this.saveTask(next);
+  }
+
+  /** Pospone hasta la siguiente sesión (cualquier día después de hoy). */
+  async snoozeTask(id: string): Promise<void> {
+    const t = this.tasks.get(id);
+    if (t) await this.saveTask({ ...t, snoozedUntil: nextDay(this.today) });
+  }
+
+  async dropTask(id: string): Promise<void> {
+    const t = this.tasks.get(id);
+    if (t) await this.saveTask({ ...t, deleted: true });
   }
 
   entryStatus(e: Entry): EntryStatus {
@@ -494,6 +562,8 @@ export class App {
     this.sessions.set(date, s);
     await this.db.putSession(s);
     await this.queue.enqueue({ kind: 'closing', date });
+    // Cada renglón de "¿Qué sigue?" es un pendiente para la siguiente sesión.
+    for (const t of tasksFromClosing(date, closing.whatsNext, this.tasks.values(), closing.updatedAt, this.me)) await this.saveTask(t, false);
     this.emit();
     void this.flush();
   }

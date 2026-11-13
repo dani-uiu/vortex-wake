@@ -18,6 +18,7 @@ import {
   checkAttendance,
   checkClosing,
   checkEntry,
+  checkTask,
   checkTeam,
   isJpegBytes,
   isValidDate,
@@ -27,6 +28,7 @@ import {
   type QrResponse,
   type SessionClosing,
   type StateResponse,
+  type TaskItem,
   type TeamConfig,
 } from '@vortex-wake/shared';
 import { accessFor, keysProblem } from './auth.ts';
@@ -142,6 +144,15 @@ async function api(req: Request, env: Env, url: URL): Promise<Response> {
     return json(200, await store.putEntry(entry as Entry));
   }
 
+  m = /^\/api\/tasks\/([^/]+)$/.exec(p);
+  if (m && method === 'PUT') {
+    const task = await readJson(req, MAX_JSON_BYTES);
+    const err = checkTask(task);
+    if (err) throw new HttpError(400, err);
+    if ((task as TaskItem).id !== safeDecode(m[1] as string)) throw new HttpError(400, 'el id no coincide con la ruta');
+    return json(200, await store.putTask(task as TaskItem));
+  }
+
   m = /^\/api\/photos\/([^/]+)$/.exec(p);
   if (m) {
     const id = safeDecode(m[1] as string);
@@ -207,9 +218,9 @@ async function state(store: D1Store, url: URL, access: AccessLevel): Promise<Res
   const raw = url.searchParams.get('date');
   const date = raw && isValidDate(raw) ? raw : undefined;
   if (raw && !date) throw new HttpError(400, 'fecha inválida');
-  const [team, sessions, entries] = await Promise.all([store.teamJson(), store.sessionsJson(date), store.entriesJson(date)]);
-  const rest: Omit<StateResponse, 'team' | 'sessions' | 'entries'> = { version: API_VERSION, serverTime: new Date().toISOString(), access, hosted: true };
-  const body = `{"team":${team},"sessions":${sessions},"entries":${entries},${JSON.stringify(rest).slice(1)}`;
+  const [team, sessions, entries, tasks] = await Promise.all([store.teamJson(), store.sessionsJson(date), store.entriesJson(date), store.tasksJson()]);
+  const rest: Omit<StateResponse, 'team' | 'sessions' | 'entries' | 'tasks'> = { version: API_VERSION, serverTime: new Date().toISOString(), access, hosted: true };
+  const body = `{"team":${team},"sessions":${sessions},"entries":${entries},"tasks":${tasks},${JSON.stringify(rest).slice(1)}`;
   return new Response(body, { headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' } });
 }
 

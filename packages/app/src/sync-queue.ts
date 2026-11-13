@@ -16,14 +16,15 @@
  * y fetch en la app; versiones en memoria en las pruebas).
  */
 
-import type { Attendance, Entry, PutEntryResponse, SessionClosing } from '@vortex-wake/shared';
+import type { Attendance, Entry, PutEntryResponse, PutTaskResponse, SessionClosing, TaskItem } from '@vortex-wake/shared';
 
 export type OpPayload =
   | { kind: 'photo'; photoId: string }
   | { kind: 'member'; memberId: string; name: string }
   | { kind: 'attendance'; date: string; attendance: Attendance }
   | { kind: 'entry'; entryId: string }
-  | { kind: 'closing'; date: string };
+  | { kind: 'closing'; date: string }
+  | { kind: 'task'; taskId: string };
 
 export type OutboxOp = OpPayload & {
   key: string;
@@ -48,6 +49,9 @@ export interface QueueStore {
   /** `undefined`: todavía se está procesando; `null`: no está en este aparato (no hay nada que mandar). */
   getPhotoBytes(id: string): Promise<Uint8Array | undefined | null>;
   getClosing(date: string): Promise<SessionClosing | undefined>;
+  getTask(id: string): Promise<TaskItem | undefined>;
+  /** El servidor tenía una versión más nueva del pendiente. */
+  acceptServerTask(task: TaskItem): Promise<void>;
 }
 
 export class HttpStatusError extends Error {
@@ -67,6 +71,7 @@ export interface Transport {
   attend(date: string, a: Attendance): Promise<void>;
   closing(date: string, c: SessionClosing): Promise<void>;
   addMember(id: string, name: string): Promise<void>;
+  putTask(task: TaskItem): Promise<PutTaskResponse>;
 }
 
 export function opKey(p: OpPayload): string {
@@ -81,10 +86,12 @@ export function opKey(p: OpPayload): string {
       return `entry:${p.entryId}`;
     case 'closing':
       return `closing:${p.date}`;
+    case 'task':
+      return `task:${p.taskId}`;
   }
 }
 
-const ORDER: Record<OpPayload['kind'], number> = { photo: 0, member: 1, attendance: 2, entry: 3, closing: 4 };
+const ORDER: Record<OpPayload['kind'], number> = { photo: 0, member: 1, attendance: 2, entry: 3, closing: 4, task: 5 };
 
 export const RETRY_NETWORK_MS = 3000;
 export const RETRY_MAX_MS = 5 * 60_000;
@@ -220,6 +227,13 @@ export class SyncQueue {
         await this.transport.closing(op.date, c);
         return true;
       }
+      case 'task': {
+        const t = await this.store.getTask(op.taskId);
+        if (!t) return true;
+        const r = await this.transport.putTask(t);
+        if (!r.applied && r.task.updatedAt > t.updatedAt) await this.store.acceptServerTask(r.task);
+        return true;
+      }
     }
   }
 }
@@ -255,5 +269,12 @@ export class MemoryQueueStore implements QueueStore {
   }
   async getClosing(date: string) {
     return this.closings.get(date);
+  }
+  readonly tasks = new Map<string, TaskItem>();
+  async getTask(id: string) {
+    return this.tasks.get(id);
+  }
+  async acceptServerTask(t: TaskItem) {
+    this.tasks.set(t.id, t);
   }
 }

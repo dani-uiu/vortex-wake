@@ -4,7 +4,7 @@
  */
 
 import { expect, it } from 'vitest';
-import { apiPath, type Entry, type StateResponse } from '../src/index.ts';
+import { apiPath, type Entry, type PutTaskResponse, type StateResponse, type TaskItem } from '../src/index.ts';
 
 export interface ContractCtx {
   /** Petición con la clave de captura. */
@@ -39,6 +39,20 @@ export function featureContract(ctx: () => ContractCtx): void {
     expect((await state()).entries.find((x) => x.id === 'anotada1')).toEqual(e);
     const bad = { ...e, elements: [{ id: 'p', type: 'photo', photoId: 'foto-a', annotations: [{ id: 'l', type: 'label', letter: 'A', x: 5, y: 0 }] }] };
     expect((await put(apiPath.entry(e.id), bad)).status).toBe(400);
+  });
+
+  it('pendientes: se guardan, se mezclan por updatedAt, llegan en el estado (también con ?date=) y se validan', async () => {
+    const t: TaskItem = { id: 'n-2026-11-11-abc', text: 'Probar el intake', fromDate: '2026-11-11', source: 'closing', createdAt: '2026-11-11T22:00:00.000Z', updatedAt: '2026-11-11T22:00:00.000Z' };
+    let r = (await (await put(apiPath.task(t.id), t)).json()) as PutTaskResponse;
+    expect(r).toEqual({ applied: true, task: t });
+    const done = { ...t, done: { by: 'ana', at: '2026-11-12T17:00:00.000Z' }, updatedAt: '2026-11-12T17:00:00.000Z' };
+    expect(((await (await put(apiPath.task(t.id), done)).json()) as PutTaskResponse).applied).toBe(true);
+    r = (await (await put(apiPath.task(t.id), t)).json()) as PutTaskResponse;
+    expect(r).toEqual({ applied: false, task: done });
+    expect((await state('2026-11-12')).tasks?.find((x) => x.id === t.id)).toEqual(done);
+    expect((await state()).tasks?.find((x) => x.id === t.id)).toEqual(done);
+    expect((await put(apiPath.task(t.id), { ...t, text: '' })).status).toBe(400);
+    expect((await put(apiPath.task('otro'), t)).status).toBe(400);
   });
 
   it('una entrada en el formato anterior (sin campos nuevos) se sigue aceptando igual', async () => {

@@ -7,6 +7,8 @@ import {
   type Attendance,
   type Entry,
   type PutEntryResponse,
+  type PutTaskResponse,
+  type TaskItem,
   type QrResponse,
   type SessionClosing,
   type StateResponse,
@@ -81,6 +83,9 @@ export class ApiClient implements Transport {
   }
   async addMember(id: string, name: string): Promise<void> {
     await this.json(apiPath.members(), 'POST', { id, name });
+  }
+  putTask(task: TaskItem): Promise<PutTaskResponse> {
+    return this.json<PutTaskResponse>(apiPath.task(task.id), 'PUT', task);
   }
   async putTeam(team: TeamConfig): Promise<TeamConfig> {
     return (await this.json<{ team: TeamConfig }>(apiPath.team(), 'PUT', team)).team;

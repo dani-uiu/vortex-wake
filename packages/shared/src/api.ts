@@ -31,6 +31,12 @@
  * | PUT  /api/sessions/:date/closing       | SessionClosing    | { session, applied }|
  * | GET  /api/template                     | —                 | plantilla .pptx     |
  * | GET  /api/qr                           | —                 | QrResponse          |
+ * | PUT  /api/tasks/:id                    | TaskItem          | PutTaskResponse     |
+ *
+ * Pendientes: gana el de `updatedAt` más reciente (como las entradas). Van en
+ * `StateResponse.tasks` (todos, también con `?date=`). Con `?date=` también
+ * llegan `recentSessions` (para avisar de un cierre que faltó). Los dos campos
+ * son opcionales: un servidor viejo no los manda y la app sigue igual.
  *
  * `/api/qr` solo existe en la versión hospedada (Worker); el servidor local
  * tiene su propia página `/qr`.
@@ -51,6 +57,7 @@ import {
   type CaptureSession,
   type Entry,
   type SessionClosing,
+  type TaskItem,
   type TeamConfig,
 } from './model.ts';
 import { SECTIONS } from './notebook.ts';
@@ -77,6 +84,22 @@ export interface StateResponse {
   access?: AccessLevel;
   /** `true` en la versión hospedada (HTTPS): la app instala su service worker. */
   hosted?: boolean;
+  /** Pendientes entre sesiones (todos; son pocos). Los servidores viejos no lo mandan. */
+  tasks?: TaskItem[];
+  /**
+   * Solo con `?date=`: las sesiones de los días anteriores más cercanos (hasta
+   * `RECENT_SESSION_DAYS`), para avisar de una sesión que quedó sin cierre.
+   */
+  recentSessions?: CaptureSession[];
+}
+
+/** Cuántos días hacia atrás se mandan en `recentSessions`. */
+export const RECENT_SESSION_DAYS = 14;
+
+export interface PutTaskResponse {
+  /** `false` si el servidor ya tenía una versión más nueva (se devuelve esa). */
+  applied: boolean;
+  task: TaskItem;
 }
 
 export interface QrResponse {
@@ -118,7 +141,15 @@ export const apiPath = {
   closing: (date: string) => `/api/sessions/${date}/closing`,
   template: () => '/api/template',
   qr: () => '/api/qr',
+  task: (id: string) => `/api/tasks/${encodeURIComponent(id)}`,
 };
+
+/** Fecha `AAAA-MM-DD` de `days` días antes de `date`. */
+export function daysBefore(date: string, days: number): string {
+  const d = new Date(`${date}T12:00:00Z`);
+  d.setUTCDate(d.getUTCDate() - days);
+  return d.toISOString().slice(0, 10);
+}
 
 // --- Mezcla -------------------------------------------------------------------
 
@@ -265,6 +296,21 @@ export function checkAttendance(v: unknown): string | undefined {
 export function checkClosing(v: unknown): string | undefined {
   if (!isObj(v) || !isIsoDateTime(v.updatedAt)) return 'cierre inválido';
   if (!optStr(v.whatWeDid) || !optStr(v.whatFailed) || !optStr(v.whatsNext) || !optStr(v.by)) return 'cierre inválido';
+  return undefined;
+}
+
+export const MAX_TASK_LENGTH = 500;
+
+export function checkTask(v: unknown): string | undefined {
+  if (!isObj(v) || !isStr(v.id) || !ID_PATTERN.test(v.id)) return 'pendiente inválido';
+  if (!isStr(v.text) || v.text.trim() === '' || v.text.length > MAX_TASK_LENGTH) return 'el pendiente necesita un texto (máximo 500 caracteres)';
+  if (!isValidDate(v.fromDate)) return 'fromDate inválida';
+  if (v.source !== 'closing' && v.source !== 'manual') return 'source debe ser "closing" o "manual"';
+  if (!isIsoDateTime(v.createdAt) || !isIsoDateTime(v.updatedAt)) return 'createdAt y updatedAt deben ser fechas ISO en UTC';
+  if (!optStr(v.createdBy)) return 'pendiente inválido';
+  if (v.done !== undefined && !(isObj(v.done) && isIsoDateTime(v.done.at) && optStr(v.done.by))) return 'done inválido';
+  if (v.snoozedUntil !== undefined && !isValidDate(v.snoozedUntil)) return 'snoozedUntil inválida';
+  if (v.deleted !== undefined && typeof v.deleted !== 'boolean') return 'deleted debe ser true o false';
   return undefined;
 }
 
