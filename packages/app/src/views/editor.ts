@@ -32,6 +32,7 @@ import type { Classification } from '../app.ts';
 import { WHAT_OPTIONS, applyWhat, exactLabel, setTarget, targetLabel, whatOf } from '../classify.ts';
 import { autosize, debounce, h, icon, openSheet, setChildren, timeOf, toast } from '../ui.ts';
 import { openAnnotator } from './annotate.ts';
+import { openSketch } from './sketch.ts';
 import { photoButton, statusPill } from './common.ts';
 import { newElement, newMatch } from './home.ts';
 import { dictationFor } from '../dictation.ts';
@@ -124,6 +125,7 @@ export function renderEditor(root: HTMLElement, app: App, id: string, onDone: ()
         { class: 'sheet-list' },
         photoButton(desk ? 'Foto (cámara)' : 'Tomar foto', { camera: true, cls: 'sheet-item', testid: 'editor-photo', onFiles: (f) => (sheet.close(), void addPhotos(f)) }),
         photoButton(desk ? 'Fotos de la computadora' : 'Fotos de la galería', { camera: false, cls: 'sheet-item', onFiles: (f) => (sheet.close(), void addPhotos(f)) }),
+        h('button', { class: 'sheet-item', type: 'button', 'data-add': 'sketch', onclick: () => (sheet.close(), openSketch((file) => addPhotos([file], true))) }, icon('sketch'), h('span', { text: 'Boceto con el dedo' })),
         ...addKinds.map(([t, label]) =>
           h('button', { class: 'sheet-item', type: 'button', 'data-add': t, onclick: () => (sheet.close(), addElement(t)) }, icon(t), h('span', { text: label })),
         ),
@@ -176,10 +178,10 @@ export function renderEditor(root: HTMLElement, app: App, id: string, onDone: ()
     ),
   );
 
-  async function addPhotos(files: File[]) {
+  async function addPhotos(files: File[], sketch = false) {
     save.flush();
     await saving;
-    const saved = await app.addPhotos(files, entry.id);
+    const saved = await app.addPhotos(files, entry.id, { sketch });
     if (saved) entry = structuredClone(saved);
     renderElements();
   }

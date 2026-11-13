@@ -499,10 +499,11 @@ export class App {
    * Foto primero: guarda el original en el teléfono y la entrada (nueva o
    * existente) en ese mismo momento; después reduce la foto en segundo plano.
    */
-  async addPhotos(files: File[], entryId?: string): Promise<Entry | undefined> {
+  async addPhotos(files: File[], entryId?: string, opts: { sketch?: boolean; kind?: EntryKind } = {}): Promise<Entry | undefined> {
     if (files.length === 0) return undefined;
     let entry = entryId ? this.entries.get(entryId) : undefined;
     entry = entry ? structuredClone(entry) : this.newEntry();
+    if (opts.kind && !entry.kind) entry.kind = opts.kind;
     const toProcess: StoredPhoto[] = [];
     for (const file of files) {
       const bytes = await file.arrayBuffer();
@@ -514,7 +515,7 @@ export class App {
       // aquí, al abrir se recupera la entrada a partir de la foto.
       await this.queue.enqueue({ kind: 'photo', photoId: id });
       this.pendingKeys.set(`photo:${id}`, undefined);
-      entry.elements.push({ id: newId(), type: 'photo', photoId: id, takenAt });
+      entry.elements.push({ id: newId(), type: 'photo', photoId: id, takenAt, ...(opts.sketch ? { sketch: true } : {}) });
       toProcess.push(photo);
     }
     const saved = await this.saveEntry(entry);

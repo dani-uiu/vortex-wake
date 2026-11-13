@@ -76,6 +76,15 @@ describe('anotaciones de fotos', () => {
     expect((r.document.pages[0]?.fields?.labels as string[][]).map((row) => row[0])).toEqual(['A (foto 1): Rodillo', 'B: Motor 11W', 'A (foto 2): Cadena']);
   });
 
+  it('boceto: se acepta en el contrato y llega a la zona de bocetos de la lluvia de ideas', () => {
+    const e = entry({ kind: 'brainstorm', section: 'mechanics', elements: [{ id: 's', type: 'photo', photoId: 'boceto1', sketch: true }, { id: 't', type: 'text', text: 'Idea' }] });
+    expect(checkEntry(e)).toBeUndefined();
+    expect(checkEntry({ ...e, elements: [{ id: 's', type: 'photo', photoId: 'b', sketch: 'sí' }] })).toBe('foto inválida');
+    const r = assembleNotebook({ team, sessions: [], entries: [e] });
+    expect(r.document.pages[0]?.fields?.sketches).toEqual({ images: [{ src: 'photos/boceto1.jpg' }] });
+    expect(r.photoIds).toEqual(['boceto1']);
+  });
+
   it('el documento rechaza marcas inválidas', () => {
     const r = assembleNotebook({ team, sessions: [], entries: [entry({ kind: 'mechanism', section: 'mechanics' })] });
     const doc = structuredClone(r.document);

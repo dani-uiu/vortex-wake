@@ -350,6 +350,21 @@ body:has(dialog[open]) { overflow: hidden; }
 /* Cierre */
 .q { display: block; }
 
+/* Boceto */
+.sketch-canvas { display: block; width: 100%; height: auto; aspect-ratio: 4 / 3; background: #fff; border-radius: 10px; border: 1px solid var(--line); touch-action: none; cursor: crosshair; }
+.sketch-tools { display: flex; flex-direction: column; gap: 8px; }
+.sketch-row { display: flex; gap: 6px; flex-wrap: wrap; }
+.sketch-btn { min-width: 48px; min-height: 48px; display: inline-flex; align-items: center; justify-content: center; border: 2px solid transparent; border-radius: 12px; background: var(--surface); color: var(--fg); }
+.sketch-btn.on { border-color: var(--accent); }
+.sketch-btn:disabled { opacity: .4; }
+.swatch { width: 24px; height: 24px; border-radius: 50%; border: 2px solid var(--line); }
+.swatch.c0 { background: #121417; }
+.swatch.c1 { background: #c8102e; }
+.swatch.c2 { background: #1f5fbf; }
+.dot { border-radius: 50%; background: var(--fg); }
+.dot.w0 { width: 6px; height: 6px; }
+.dot.w1 { width: 14px; height: 14px; }
+
 /* Partido de torneo */
 .match { display: flex; flex-direction: column; gap: 12px; }
 .match-row { display: flex; gap: 8px; align-items: center; }

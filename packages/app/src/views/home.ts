@@ -3,6 +3,7 @@ import type { App } from '../app.ts';
 import { BUILD_LABEL } from '../pwa.ts';
 import { dateLabel, h, icon, openSheet, setChildren, toast } from '../ui.ts';
 import { entryCard, photoButton, syncBadge } from './common.ts';
+import { openSketch } from './sketch.ts';
 import { openAddTask, tasksBlock } from './tasks.ts';
 
 type Filter = 'all' | 'todo' | 'mine';
@@ -63,6 +64,7 @@ export function renderHome(root: HTMLElement, app: App, go: (hash: string) => vo
         'div',
         { class: 'sheet-list' },
         photoButton('Fotos de la galería', { camera: false, cls: 'sheet-item', testid: 'gallery-input', onFiles: (files) => (sheet.close(), savePhotos(files)) }),
+        h('button', { class: 'sheet-item', type: 'button', 'data-testid': 'new-sketch', onclick: () => (sheet.close(), openSketch((file) => app.addPhotos([file], undefined, { sketch: true, kind: 'brainstorm' }).then((saved) => toast('Boceto guardado', saved ? { label: 'Abrir', testid: 'toast-open-sketch', run: () => go(`#/entrada/${saved.id}`) } : undefined)))) }, icon('sketch'), h('span', { text: 'Boceto con el dedo' })),
         item('new-trials', 'trials', 'Prueba (aciertos y fallos)', 'trials'),
         item('new-link', 'link', 'Enlace', 'link'),
         item('new-list', 'list', 'Lista', 'list'),
