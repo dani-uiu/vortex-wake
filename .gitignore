@@ -26,5 +26,6 @@ Thumbs.db
 desktop.ini
 .DS_Store
 
-# Copias de trabajo de los agentes
+# Copias de trabajo e instrucciones de los agentes
 .claude/
+CLAUDE.md
