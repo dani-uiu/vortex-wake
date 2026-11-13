@@ -52,7 +52,7 @@ export function renderDesktop(root: HTMLElement, app: App, go: (hash: string) =>
       closeEditor = undefined;
       panel.hidden = true;
       panel.replaceChildren();
-    });
+    }, { full: true });
   };
 
   root.replaceChildren(

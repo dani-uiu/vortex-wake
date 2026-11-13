@@ -1,9 +1,14 @@
 import { ENTRY_KIND_LABELS, MARK_LABELS, SECTION_LABELS, isUnclassified, type Entry } from '@vortex-wake/shared';
 import type { App } from '../app.ts';
+import { targetLabel } from '../classify.ts';
 import { h, icon, timeOf } from '../ui.ts';
 
 /** Indicador de sincronización: "guardado en este teléfono" / "enviado". */
-export function syncBadge(app: App): HTMLElement {
+/**
+ * Indicador de sincronización. Con `quiet`, cuando todo está enviado se
+ * reduce a una marca discreta; solo llama la atención si hay pendientes o error.
+ */
+export function syncBadge(app: App, quiet = false): HTMLElement {
   const s = app.sync;
   let cls = 'ok';
   let text = 'Todo enviado';
@@ -29,11 +34,15 @@ export function syncBadge(app: App): HTMLElement {
     text = 'Conectando…';
     ic = 'phone';
   }
-  return h('div', { class: `sync ${cls}`, 'data-testid': 'sync', 'data-pending': String(s.pending), 'data-online': String(s.online) }, icon(ic), h('span', { text }));
+  const attrs = { 'data-testid': 'sync', 'data-pending': String(s.pending), 'data-online': String(s.online), 'data-state': cls };
+  if (quiet && cls === 'ok') return h('div', { ...attrs, class: 'sync-quiet', role: 'status' }, icon('cloud', 'icon sm'), h('span', { text: 'Enviado' }));
+  return h('div', { ...attrs, class: `sync ${cls}`, role: 'status' }, icon(ic), h('span', { text }));
 }
 
-export function statusPill(app: App, e: Entry): HTMLElement {
+export function statusPill(app: App, e: Entry, compact = false): HTMLElement {
   const st = app.entryStatus(e);
+  // En la lista del celular, "Enviado" es solo un ícono: lo normal no ocupa espacio.
+  if (st === 'sent' && compact) return h('span', { class: 'pill sent quiet', 'data-status': 'sent', title: 'Enviado', 'aria-label': 'Enviado', role: 'img' }, icon('cloud', 'icon sm'));
   if (st === 'sent') return h('span', { class: 'pill sent', 'data-status': 'sent' }, icon('cloud', 'icon sm'), 'Enviado');
   if (st === 'error') return h('span', { class: 'pill bad', 'data-status': 'error' }, icon('alert', 'icon sm'), 'Error al enviar');
   return h('span', { class: 'pill local', 'data-status': 'local' }, icon('phone', 'icon sm'), 'En este teléfono');
@@ -52,7 +61,7 @@ export function entrySummary(e: Entry): string {
   return parts.join(' · ');
 }
 
-export function entryCard(app: App, e: Entry, onOpen: (id: string) => void): HTMLElement {
+export function entryCard(app: App, e: Entry, onOpen: (id: string) => void, compact = false): HTMLElement {
   const photos = e.elements.filter((el) => el.type === 'photo');
   const thumb = h('div', { class: 'thumb' });
   const first = photos[0];
@@ -66,23 +75,32 @@ export function entryCard(app: App, e: Entry, onOpen: (id: string) => void): HTM
     thumb.append(icon(kindIcon));
   }
   const chips: HTMLElement[] = [];
-  if (isUnclassified(e)) chips.push(h('span', { class: 'tag todo', text: 'Sin clasificar' }));
-  if (e.kind) chips.push(h('span', { class: 'tag', text: ENTRY_KIND_LABELS[e.kind] }));
-  if (e.section) chips.push(h('span', { class: 'tag', text: SECTION_LABELS[e.section] }));
-  if (e.subsystem) chips.push(h('span', { class: 'tag', text: e.subsystem }));
-  for (const m of e.marks) if (m !== 'normal') chips.push(h('span', { class: 'tag mark', text: MARK_LABELS[m] }));
-  if (e.thread) chips.push(h('span', { class: 'tag', text: `Hilo: ${e.thread}` }));
+  if (compact) {
+    // Celular: solo lo que ayuda a reconocer la entrada.
+    if (isUnclassified(e)) chips.push(h('span', { class: 'tag todo', text: 'Sin clasificar' }));
+    if (e.kind) chips.push(h('span', { class: 'tag', text: ENTRY_KIND_LABELS[e.kind] }));
+    const target = targetLabel(app.team?.robots ?? [], e.robotId, e.subsystem);
+    if (target) chips.push(h('span', { class: 'tag', text: target }));
+    if (e.marks.includes('milestone')) chips.push(h('span', { class: 'tag mark', text: MARK_LABELS.milestone }));
+  } else {
+    if (isUnclassified(e)) chips.push(h('span', { class: 'tag todo', text: 'Sin clasificar' }));
+    if (e.kind) chips.push(h('span', { class: 'tag', text: ENTRY_KIND_LABELS[e.kind] }));
+    if (e.section) chips.push(h('span', { class: 'tag', text: SECTION_LABELS[e.section] }));
+    if (e.subsystem) chips.push(h('span', { class: 'tag', text: e.subsystem }));
+    for (const m of e.marks) if (m !== 'normal') chips.push(h('span', { class: 'tag mark', text: MARK_LABELS[m] }));
+    if (e.thread) chips.push(h('span', { class: 'tag', text: `Hilo: ${e.thread}` }));
+  }
   const summary = entrySummary(e);
   const authors = e.authorIds.map((id) => app.memberName(id)).join(', ');
   return h(
     'button',
-    { class: 'card', type: 'button', 'data-entry': e.id, onclick: () => onOpen(e.id) },
+    { class: `card${compact ? ' compact' : ''}`, type: 'button', 'data-entry': e.id, onclick: () => onOpen(e.id) },
     thumb,
     h(
       'div',
       { class: 'card-body' },
-      h('div', { class: 'card-top' }, h('span', { class: 'time', text: timeOf(e.createdAt) }), statusPill(app, e)),
-      summary ? h('div', { class: 'summary', text: summary }) : h('div', { class: 'summary muted', text: photos.length > 0 ? `${photos.length} foto(s)` : 'Vacía' }),
+      h('div', { class: 'card-top' }, h('span', { class: 'time', text: timeOf(e.createdAt) }), statusPill(app, e, compact)),
+      summary ? h('div', { class: 'summary', text: summary }) : h('div', { class: 'summary muted', text: photos.length > 0 ? (photos.length === 1 ? 'Foto' : `${photos.length} fotos`) : 'Vacía' }),
       chips.length > 0 ? h('div', { class: 'tags' }, chips) : null,
       authors ? h('div', { class: 'authors muted', text: authors }) : null,
     ),

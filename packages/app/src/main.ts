@@ -11,7 +11,7 @@ import './styles.css';
 import { App, LS_HOSTED, lsGet, takeKeyFromUrl } from './app.ts';
 import { LocalDb } from './db.ts';
 import { setupServiceWorker } from './pwa.ts';
-import { h } from './ui.ts';
+import { h, hideToast } from './ui.ts';
 import { renderDesktop, renderNeedsEditKey, renderQr } from './views/desktop.ts';
 import { renderEditor } from './views/editor.ts';
 import { renderClosing, renderHome, renderNoKey, renderWho } from './views/home.ts';
@@ -47,6 +47,9 @@ async function boot(): Promise<void> {
     cleanup?.();
     cleanup = undefined;
     window.scrollTo(0, 0);
+    hideToast(true);
+    // Una hoja abierta (por ejemplo, al usar "atrás") no se queda sobre otra pantalla.
+    for (const d of document.querySelectorAll<HTMLDialogElement>('dialog.sheet')) d.close();
     const hash = location.hash || '#/';
     const desk = hash.startsWith('#/escritorio') || hash.startsWith('#/qr');
     document.body.classList.toggle('wide', desk);

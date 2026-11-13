@@ -44,6 +44,10 @@ export const ICONS = {
   user: svg('<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>'),
   download: svg('<path d="M12 4v11M7 10l5 5 5-5M5 20h14"/>'),
   edit: svg('<path d="M4 20h4L19 9l-4-4L4 16z"/>'),
+  chevron: svg('<path d="m9 6 6 6-6 6"/>'),
+  more: svg('<circle cx="5" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="19" cy="12" r="1.5"/>'),
+  repeat: svg('<path d="M17 2l3 3-3 3"/><path d="M4 11V9a4 4 0 0 1 4-4h12"/><path d="M7 22l-3-3 3-3"/><path d="M20 13v2a4 4 0 0 1-4 4H4"/>'),
+  flag: svg('<path d="M5 21V4M5 4h11l-2 4 2 4H5"/>'),
 };
 
 export function icon(name: keyof typeof ICONS, cls = 'icon'): HTMLSpanElement {
@@ -51,16 +55,69 @@ export function icon(name: keyof typeof ICONS, cls = 'icon'): HTMLSpanElement {
 }
 
 let toastTimer: number | undefined;
-export function toast(message: string): void {
+/**
+ * Aviso breve abajo. Sin acción no recibe toques (no tapa botones); con
+ * acción ("Clasificar") se queda unos segundos más y sí se puede tocar.
+ */
+export function toast(message: string, action?: { label: string; run: () => void; testid?: string }): void {
   let el = document.getElementById('toast');
   if (!el) {
     el = h('div', { id: 'toast', role: 'status', 'aria-live': 'polite' });
     document.body.append(el);
   }
-  el.textContent = message;
+  const hide = () => el?.classList.remove('show', 'has-action');
+  setChildren(
+    el,
+    h('span', { text: message }),
+    action ? h('button', { type: 'button', class: 'toast-action', 'data-testid': action.testid, onclick: () => (hide(), action.run()) }, action.label) : null,
+  );
+  el.classList.toggle('has-action', !!action);
   el.classList.add('show');
   if (toastTimer) clearTimeout(toastTimer);
-  toastTimer = window.setTimeout(() => el?.classList.remove('show'), 2600);
+  toastTimer = window.setTimeout(hide, action ? 6000 : 2600);
+}
+
+/** Quita el aviso; con `onlyAction`, solo si es uno con botón (al cambiar de pantalla ya no aplica). */
+export function hideToast(onlyAction = false): void {
+  const el = document.getElementById('toast');
+  if (el && (!onlyAction || el.classList.contains('has-action'))) el.classList.remove('show', 'has-action');
+}
+
+export interface Sheet {
+  body: HTMLElement;
+  close(): void;
+}
+
+/**
+ * Hoja inferior (un `<dialog>` modal): se cierra con la X, tocando fuera o
+ * con Esc. `body` se puede volver a llenar mientras está abierta.
+ */
+export function openSheet(title: string, testid: string, onClose?: () => void): Sheet {
+  hideToast();
+  const body = h('div', { class: 'sheet-body' });
+  const dlg = h('dialog', { class: 'sheet', 'data-testid': testid, 'aria-label': title });
+  const close = () => {
+    if (dlg.open) dlg.close();
+  };
+  dlg.addEventListener('close', () => {
+    dlg.remove();
+    onClose?.();
+  });
+  // Tocar el fondo (fuera de la hoja) la cierra.
+  dlg.addEventListener('click', (ev) => {
+    if (ev.target === dlg) close();
+  });
+  dlg.append(
+    h(
+      'div',
+      { class: 'sheet-inner' },
+      h('div', { class: 'sheet-head' }, h('h2', { text: title }), h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'Cerrar', onclick: close }, icon('x'))),
+      body,
+    ),
+  );
+  document.body.append(dlg);
+  dlg.showModal();
+  return { body, close };
 }
 
 export function timeOf(iso: string): string {

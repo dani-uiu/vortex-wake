@@ -211,35 +211,52 @@ try {
   assert(jpg[0] === 0xff && jpg[1] === 0xd8, 'la foto llega como JPEG');
   log(`A: foto guardada y enviada (${jpg.length} bytes)`);
 
-  // Nota con clasificación.
+  // La foto sin clasificar se abre desde la lista y queda "Sin clasificar" hasta que alguien la clasifique.
+  assert((await a.locator('.card .tag.todo').count()) === 1, 'la foto queda "Sin clasificar"');
+
+  // Nota con clasificación: "¿De qué es?" → "¿Qué fue?" (se abre sola) → "Más detalles".
   await a.click('[data-testid=new-text]');
   await a.waitForSelector('[data-testid=text-input]');
   await a.fill('[data-testid=text-input]', 'Armamos el chasis y tensamos la cadena del lado izquierdo.');
-  await a.click('[data-testid=section] [data-value=mechanics]');
-  await a.click('[data-testid=kind] [data-value=buildIteration]');
-  await a.click('[data-testid=robot] [data-value=robot-a]');
-  await a.click('[data-testid=subsystem] [data-value=chasis]');
+  assert((await a.locator('[data-testid=same-as-before]').count()) === 0, 'sin clasificación anterior no se propone "Igual que la anterior"');
+  await a.click('[data-testid=class-target]');
+  await a.click('[data-testid=sheet-target] [data-robot=robot-a] [data-value="robot-a|chasis"]');
+  await a.click('[data-testid=sheet-what] [data-value=build]');
+  assert(((await a.textContent('[data-testid=class-what]')) ?? '').includes('Construcción · Mecánica'), '"Construimos" se muestra como Construcción · Mecánica');
+  await a.click('[data-testid=more-details] summary');
+  assert((await a.inputValue('[data-testid=thread-input]')) === 'Robot A · chasis', 'el hilo se propone solo (robot + subsistema)');
   await a.click('[data-testid=marks] [data-value=change]');
   await a.fill('[data-testid=thread-input]', 'chasis v1');
+  await a.evaluate(() => scrollTo(0, 0));
   await shot(a, '02-editor-nota');
   await a.click('[data-testid=editor-done]');
   await a.waitForSelector('[data-testid=entry-list]');
-  await until('nota clasificada en el servidor', async () => (await liveEntries()).find((e) => e.kind === 'buildIteration' && e.thread === 'chasis v1' && e.elements.some((x) => x.type === 'text' && x.text.includes('cadena'))));
+  await until('nota clasificada en el servidor', async () =>
+    (await liveEntries()).find(
+      (e) => e.kind === 'buildIteration' && e.section === 'mechanics' && e.robotId === 'robot-a' && e.subsystem === 'chasis' && e.marks.includes('change') && e.thread === 'chasis v1' && e.authorIds.join() === 'ana' && e.elements.some((x) => x.type === 'text' && x.text.includes('cadena')),
+    ),
+  );
   log('A: nota clasificada enviada');
 
-  // Contador de pruebas.
-  await a.click('[data-testid=new-trials]');
+  // Contador de pruebas (desde "Más"), con "Igual que la anterior" y cambiando "¿Qué fue?".
+  await a.click('[data-testid=more-actions]');
+  await a.click('[data-testid=sheet-more] [data-testid=new-trials]');
   await a.waitForSelector('[data-testid=trial-ok]');
   for (const ok of [true, true, false, true]) await a.click(ok ? '[data-testid=trial-ok]' : '[data-testid=trial-fail]');
   await a.fill('.trial-list li:nth-child(2) input', 'Se atoró la pieza');
-  await a.click('[data-testid=kind] [data-value=test]');
-  await a.click('[data-testid=section] [data-value=mechanics]');
+  assert(((await a.textContent('[data-testid=same-as-before]')) ?? '').includes('Robot A · chasis'), 'propone "Igual que la anterior" con lo último de Ana');
+  await a.click('[data-testid=same-as-before]');
+  await a.click('[data-testid=class-what]');
+  await a.click('[data-testid=sheet-what] [data-value=test]');
   assert((await a.textContent('[data-testid=trials-score]'))?.includes('3 de 4'), 'el contador muestra 3 de 4');
+  await a.evaluate(() => scrollTo(0, 0));
   await shot(a, '03-contador');
   await a.click('[data-testid=editor-done]');
-  await until('contador en el servidor', async () => (await liveEntries()).find((e) => e.elements.some((x) => x.type === 'trials' && x.trials.length === 4 && x.trials.some((t) => t.note === 'Se atoró la pieza'))));
+  await until('contador en el servidor', async () =>
+    (await liveEntries()).find((e) => e.kind === 'test' && e.section === 'mechanics' && e.robotId === 'robot-a' && e.subsystem === 'chasis' && e.elements.some((x) => x.type === 'trials' && x.trials.length === 4 && x.trials.some((t) => t.note === 'Se atoró la pieza'))),
+  );
   await shot(a, '04-lista');
-  log('A: contador de pruebas (3 de 4, con nota) enviado');
+  log('A: contador de pruebas (3 de 4, con nota) enviado, clasificado con "Igual que la anterior"');
 
   if (NUBE) {
     assert((await a.locator('a[href="#/escritorio"]').count()) === 0, 'con la clave de captura no aparece "Vista de computadora"');
@@ -312,13 +329,16 @@ try {
   await until('B ve las entradas de A', async () => (await b.locator('.card').count()) >= 5);
   await b.click('[data-testid=new-text]');
   await b.fill('[data-testid=text-input]', 'Programamos el autónomo de la izquierda.');
-  await b.click('[data-testid=section] [data-value=coding]');
+  await b.click('[data-testid=class-what]');
+  await b.click('[data-testid=sheet-what] [data-value=code]');
   await b.click('[data-testid=editor-done]');
+  await until('"Programamos" llega como Código · Programación', async () => (await liveEntries()).find((e) => e.kind === 'codeDoc' && e.section === 'coding' && e.capturedBy === 'beto'));
   // B edita una entrada de A (la foto sin clasificar).
   await b.click('[data-testid=filter-todo]');
   await b.locator('.card', { hasText: 'Capturado sin señal' }).click();
-  await b.waitForSelector('[data-testid=marks]');
-  await b.click('[data-testid=marks] [data-value=milestone]');
+  await b.waitForSelector('[data-testid=milestone]');
+  await b.click('[data-testid=milestone]');
+  assert((await b.getAttribute('[data-testid=milestone]', 'aria-checked')) === 'true', '"Es un hito" queda encendido');
   await b.click('[data-testid=editor-done]');
   await shot(b, '06-telefono-b-oscuro');
   await until('B: la edición de una entrada ajena llega', async () => (await liveEntries()).some((e) => e.marks.includes('milestone') && e.capturedBy === 'ana' && e.elements.some((x) => x.type === 'text' && x.text === 'Capturado sin señal')));

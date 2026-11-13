@@ -15,9 +15,16 @@ Desarrollo con recarga: `npm run servidor` en una terminal y `npm run dev -w @vo
 ## Qué hace
 
 - **Entrada:** cada quien toca su nombre (el teléfono lo recuerda). Eso registra su asistencia en la sesión del día (una sesión = un día, se crea sola). Se puede agregar gente desde ahí.
-- **Foto primero:** el botón grande abre la cámara; con un toque la foto y su entrada quedan guardadas. Lo demás se completa después.
-- **Entradas** con elementos: fotos (con pie), texto, enlace, lista, tabla simple y contador de pruebas en vivo (acierto/fallo, nota por intento, deshacer).
-- **Clasificación** opcional con chips: autores (los presentes; queda el último usado), sección, tipo de entrada, robot, subsistema, marca e hilo (con sugerencias).
+- **Inicio:** dos acciones, **Foto** (grande) y **Nota**; Galería, Prueba, Enlace, Lista y Tabla están en **Más** (hoja inferior). Si todo está enviado, el estado es solo una marca discreta; si hay pendientes o error, se vuelve un aviso.
+- **Foto primero:** el botón grande abre la cámara; con un toque la foto y su entrada quedan guardadas. El aviso "Foto guardada" trae **Clasificar** para hacerlo ya; si no, se completa después.
+- **Entradas** con elementos: fotos (con pie), texto, enlace, lista, tabla simple y contador de pruebas en vivo (acierto/fallo, nota por intento, deshacer). En el celular se agregan con un solo botón "Agregar".
+- **Clasificación** opcional, en filas de resumen que abren hojas (`src/classify.ts`):
+  - **¿De qué es?** robot y subsistema en un paso, con los recientes primero.
+  - **¿Qué fue?** nueve opciones en lenguaje llano; cada una pone un tipo de entrada y deduce la sección (tabla en `WHAT_OPTIONS`). Si una entrada ya tenía un tipo equivalente (p. ej. Mecanismo dentro de "Construimos"), no se pisa.
+  - **¿Quién?** por defecto quien tiene el teléfono; "+ alguien más".
+  - **Es un hito** (interruptor) y **Más detalles** plegado: sección, tipo exacto, todas las marcas e hilo. El hilo se propone solo (robot · subsistema) mientras nadie lo escriba a mano.
+  - **Igual que la anterior:** si la entrada está sin clasificar, propone (sin aplicarlo) lo último que esa persona usó en ese teléfono (`localStorage` `vw.recent.<id>`; no se manda al servidor).
+- En la **vista de computadora** el editor muestra la clasificación completa con chips, como antes.
 - **Lista del día** de todo el equipo, con filtros "Sin clasificar" y "Mías", y edición de entradas propias y ajenas.
 - **Cierre de sesión** con tres preguntas.
 - **Vista de computadora** (`#/escritorio`, o "Vista de computadora" al pie): línea de tiempo por sesión, edición en un panel, equipo (integrantes y robots) y **Generar bitácora**, que arma el documento (`shared/assemble.ts`) y genera el `.pptx` en el navegador con `packages/generator` (se carga solo al usarlo).

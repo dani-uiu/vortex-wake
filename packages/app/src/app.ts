@@ -14,6 +14,8 @@ import {
   type CaptureSession,
   type Entry,
   type EntryElement,
+  type EntryKind,
+  type SectionId,
   type SessionClosing,
   type TeamConfig,
 } from '@vortex-wake/shared';
@@ -26,6 +28,21 @@ const LS_KEY = 'vw.key';
 const LS_ME = 'vw.me';
 const LS_AUTHORS = 'vw.lastAuthors';
 const LS_ACCESS = 'vw.access';
+/** Más el id de la persona: lo último que clasificó en este teléfono. */
+const LS_RECENT = 'vw.recent.';
+
+/** Clasificación recordada en el teléfono (solo para proponerla; no se guarda en el servidor). */
+export interface Classification {
+  robotId?: string;
+  subsystem?: string;
+  kind?: EntryKind;
+  section?: SectionId;
+}
+export interface Recent {
+  last?: Classification;
+  /** Robot + subsistema usados, el más reciente primero. */
+  targets: { robotId?: string; subsystem?: string }[];
+}
 export const LS_HOSTED = 'vw.hosted';
 
 export type EntryStatus = 'local' | 'sent' | 'error';
@@ -288,6 +305,37 @@ export class App {
     return id;
   }
 
+  /** Lo último que esta persona clasificó en este teléfono (para proponerlo). */
+  recent(): Recent {
+    if (!this.me) return { targets: [] };
+    try {
+      const v = JSON.parse(lsGet(LS_RECENT + this.me) ?? 'null') as Partial<Recent> | null;
+      if (v && typeof v === 'object' && Array.isArray(v.targets)) return { targets: v.targets.filter((t) => t && typeof t === 'object'), ...(v.last && typeof v.last === 'object' ? { last: v.last } : {}) };
+    } catch {
+      /* dato viejo o dañado: se empieza de cero */
+    }
+    return { targets: [] };
+  }
+
+  rememberClassification(e: Entry): void {
+    if (!this.me) return;
+    const c: Classification = {};
+    if (e.robotId) c.robotId = e.robotId;
+    if (e.subsystem) c.subsystem = e.subsystem;
+    if (e.kind) c.kind = e.kind;
+    if (e.section) c.section = e.section;
+    if (Object.keys(c).length === 0) return;
+    const r = this.recent();
+    r.last = c;
+    if (c.robotId || c.subsystem) {
+      const t: Recent['targets'][number] = {};
+      if (c.robotId) t.robotId = c.robotId;
+      if (c.subsystem) t.subsystem = c.subsystem;
+      r.targets = [t, ...r.targets.filter((x) => x.robotId !== t.robotId || x.subsystem !== t.subsystem)].slice(0, 6);
+    }
+    lsSet(LS_RECENT + this.me, JSON.stringify(r));
+  }
+
   lastAuthors(): string[] {
     try {
       const v = JSON.parse(lsGet(LS_AUTHORS) ?? '[]') as unknown;
@@ -310,7 +358,8 @@ export class App {
       sessionDate: this.today,
       createdAt: now,
       updatedAt: now,
-      authorIds: authors.length > 0 ? authors : this.me ? [this.me] : [],
+      // Por defecto, quien tiene el teléfono; "+ alguien más" agrega a otros.
+      authorIds: this.me ? [this.me] : authors,
       marks: [],
       elements,
     };

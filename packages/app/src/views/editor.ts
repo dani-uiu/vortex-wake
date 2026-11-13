@@ -1,7 +1,12 @@
 /**
  * Edición de una micro-entrada: elementos (fotos, texto, enlace, lista,
- * tabla, contador de pruebas) y clasificación con chips grandes. Todo se
- * guarda solo, al instante, en el teléfono.
+ * tabla, contador de pruebas) y clasificación. Todo se guarda solo, al
+ * instante, en el teléfono.
+ *
+ * En el celular la clasificación son pocas filas de resumen ("¿De qué es?",
+ * "¿Qué fue?", "¿Quién?", "Es un hito") que abren hojas inferiores, más
+ * "Más detalles" plegado con sección, tipo exacto, marcas e hilo. En la vista
+ * de computadora (`full`) se ve completa, con todos los chips.
  */
 
 import {
@@ -16,13 +21,24 @@ import {
   type SectionId,
 } from '@vortex-wake/shared';
 import type { App } from '../app.ts';
-import { autosize, debounce, h, icon, setChildren, timeOf, toast } from '../ui.ts';
+import type { Classification } from '../app.ts';
+import { WHAT_OPTIONS, applyWhat, exactLabel, setTarget, targetLabel, whatOf } from '../classify.ts';
+import { autosize, debounce, h, icon, openSheet, setChildren, timeOf, toast } from '../ui.ts';
 import { photoButton, statusPill } from './common.ts';
 import { newElement } from './home.ts';
 
 const SECTIONS: SectionId[] = ['mechanics', 'coding', 'wiring', 'strategy'];
 
-export function renderEditor(root: HTMLElement, app: App, id: string, onDone: () => void): () => void {
+export interface EditorOptions {
+  /**
+   * Vista de computadora: clasificación completa a la vista (todos los chips),
+   * como antes. En el celular (por omisión) se usan filas de resumen y hojas.
+   */
+  full?: boolean;
+}
+
+export function renderEditor(root: HTMLElement, app: App, id: string, onDone: () => void, opts: EditorOptions = {}): () => void {
+  const full = opts.full === true;
   const found = app.entries.get(id);
   if (!found) {
     root.replaceChildren(h('div', { class: 'center' }, h('p', { text: 'No se encontró la entrada.' }), h('button', { class: 'btn', type: 'button', onclick: onDone }, 'Volver')));
@@ -46,9 +62,9 @@ export function renderEditor(root: HTMLElement, app: App, id: string, onDone: ()
   document.addEventListener('visibilitychange', onHide);
   addEventListener('pagehide', save.flush);
 
-  const status = h('span', {});
+  const status = h('span', { class: 'editor-status' });
   const elementsBox = h('div', { class: 'elements' });
-  const classBox = h('div', { class: 'classify' });
+  const classBox = h('div', { class: full ? 'classify' : 'classify simple', 'data-testid': 'classify' });
 
   const done = () => {
     save.flush();
@@ -62,30 +78,58 @@ export function renderEditor(root: HTMLElement, app: App, id: string, onDone: ()
       'div',
       { class: 'topbar-row' },
       h('button', { class: 'back', type: 'button', 'data-testid': 'editor-done', onclick: done }, icon('back'), 'Listo'),
-      h('span', { class: 'muted', text: `Entrada de las ${timeOf(entry.createdAt)}` }),
+      full
+        ? h('span', { class: 'muted', text: `Entrada de las ${timeOf(entry.createdAt)}` })
+        : h('span', { class: 'editor-meta' }, h('span', { class: 'muted', text: timeOf(entry.createdAt) }), status),
     ),
-    status,
+    full ? status : null,
   );
 
-  const addBar = h(
-    'div',
-    { class: 'add-bar' },
-    photoButton('Foto', { camera: true, cls: 'chip-btn', testid: 'editor-photo', onFiles: (f) => void addPhotos(f) }),
-    photoButton('Galería', { camera: false, cls: 'chip-btn', onFiles: (f) => void addPhotos(f) }),
-    ...(['text', 'link', 'list', 'table', 'trials'] as const).map((t) =>
+  const addKinds = [
+    ['text', 'Texto'],
+    ['list', 'Lista'],
+    ['trials', 'Prueba (aciertos y fallos)'],
+    ['link', 'Enlace'],
+    ['table', 'Tabla'],
+  ] as const;
+
+  // Computadora: la barra de siempre. Celular: un solo botón "Agregar" que abre una hoja.
+  const addBar = full
+    ? h(
+        'div',
+        { class: 'add-bar' },
+        photoButton('Foto', { camera: true, cls: 'chip-btn', testid: 'editor-photo', onFiles: (f) => void addPhotos(f) }),
+        photoButton('Galería', { camera: false, cls: 'chip-btn', onFiles: (f) => void addPhotos(f) }),
+        ...(['text', 'link', 'list', 'table', 'trials'] as const).map((t) =>
+          h(
+            'button',
+            { class: 'chip-btn', type: 'button', 'data-add': t, onclick: () => addElement(t) },
+            icon(t),
+            h('span', { text: { text: 'Texto', link: 'Enlace', list: 'Lista', table: 'Tabla', trials: 'Prueba' }[t] }),
+          ),
+        ),
+      )
+    : h('button', { class: 'add-btn', type: 'button', 'data-testid': 'editor-add', 'aria-haspopup': 'dialog', onclick: () => openAdd() }, icon('plus'), h('span', { text: 'Agregar foto, texto…' }));
+
+  function openAdd() {
+    const sheet = openSheet('Agregar', 'sheet-add');
+    sheet.body.append(
       h(
-        'button',
-        { class: 'chip-btn', type: 'button', 'data-add': t, onclick: () => addElement(t) },
-        icon(t === 'trials' ? 'trials' : t),
-        h('span', { text: { text: 'Texto', link: 'Enlace', list: 'Lista', table: 'Tabla', trials: 'Prueba' }[t] }),
+        'div',
+        { class: 'sheet-list' },
+        photoButton('Tomar foto', { camera: true, cls: 'sheet-item', testid: 'editor-photo', onFiles: (f) => (sheet.close(), void addPhotos(f)) }),
+        photoButton('Fotos de la galería', { camera: false, cls: 'sheet-item', onFiles: (f) => (sheet.close(), void addPhotos(f)) }),
+        ...addKinds.map(([t, label]) =>
+          h('button', { class: 'sheet-item', type: 'button', 'data-add': t, onclick: () => (sheet.close(), addElement(t)) }, icon(t), h('span', { text: label })),
+        ),
       ),
-    ),
-  );
+    );
+  }
 
   const del = h(
     'button',
     {
-      class: 'btn danger',
+      class: full ? 'btn danger' : 'btn-text danger',
       type: 'button',
       onclick: async () => {
         if (!confirm('¿Borrar esta entrada? Se borra para todo el equipo.')) return;
@@ -102,7 +146,16 @@ export function renderEditor(root: HTMLElement, app: App, id: string, onDone: ()
 
   root.replaceChildren(
     head,
-    h('div', { class: 'editor' }, h('h2', { class: 'section-title', text: 'Contenido' }), elementsBox, addBar, h('h2', { class: 'section-title', text: 'Clasificación (opcional)' }), classBox, h('div', { class: 'editor-end' }, h('button', { class: 'btn primary big', type: 'button', onclick: done }, 'Listo'), del)),
+    h(
+      'div',
+      { class: full ? 'editor' : 'editor simple' },
+      full ? h('h2', { class: 'section-title', text: 'Contenido' }) : null,
+      elementsBox,
+      addBar,
+      h('h2', { class: 'section-title', text: full ? 'Clasificación (opcional)' : 'Clasificar (opcional)' }),
+      classBox,
+      h('div', { class: 'editor-end' }, h('button', { class: 'btn primary big', type: 'button', onclick: done }, 'Listo'), del),
+    ),
   );
 
   async function addPhotos(files: File[]) {
@@ -134,7 +187,7 @@ export function renderEditor(root: HTMLElement, app: App, id: string, onDone: ()
 
   function renderElements() {
     elementsBox.replaceChildren(...entry.elements.map((el) => elementEditor(el)));
-    if (entry.elements.length === 0) elementsBox.append(h('p', { class: 'muted', text: 'Agrega una foto, un texto o una prueba.' }));
+    if (entry.elements.length === 0) elementsBox.append(h('p', { class: 'muted', text: 'Vacía. Agrega una foto, un texto o una prueba.' }));
   }
 
   function shell(el: EntryElement, title: string, body: HTMLElement[]): HTMLElement {
@@ -279,10 +332,17 @@ export function renderEditor(root: HTMLElement, app: App, id: string, onDone: ()
 
   // --- clasificación ---------------------------------------------------------------
 
+  /** Cambio de clasificación: se guarda ya, se recuerda en el teléfono y se vuelve a pintar. */
+  const changed = () => {
+    saveNow();
+    if (!full) app.rememberClassification(entry);
+    renderClass();
+  };
+
   function chips<T extends string>(label: string, options: { value: T; label: string }[], isOn: (v: T) => boolean, toggle: (v: T) => void, testid: string): HTMLElement {
     return h(
       'div',
-      { class: 'chip-group', 'data-testid': testid },
+      { class: 'chip-group', 'data-testid': testid, role: 'group', 'aria-label': label },
       h('div', { class: 'field-label', text: label }),
       h(
         'div',
@@ -290,7 +350,7 @@ export function renderEditor(root: HTMLElement, app: App, id: string, onDone: ()
         options.map((o) =>
           h(
             'button',
-            { class: `chip ${isOn(o.value) ? 'on' : ''}`, type: 'button', 'aria-pressed': String(isOn(o.value)), 'data-value': o.value, onclick: () => (toggle(o.value), saveNow(), renderClass()) },
+            { class: `chip ${isOn(o.value) ? 'on' : ''}`, type: 'button', 'aria-pressed': String(isOn(o.value)), 'data-value': o.value, onclick: () => (toggle(o.value), changed()) },
             o.label,
           ),
         ),
@@ -298,18 +358,34 @@ export function renderEditor(root: HTMLElement, app: App, id: string, onDone: ()
     );
   }
 
-  let showAllPeople = false;
-  function renderClass() {
-    const team = app.team;
-    const present = app.presentIds(entry.sessionDate);
-    const people = (team?.members ?? []).filter((m) => m.active !== false);
-    const shownPeople = showAllPeople ? people : people.filter((m) => present.includes(m.id) || entry.authorIds.includes(m.id) || m.id === app.me);
-    const robots = team?.robots ?? [];
-    const robot = robots.find((r) => r.id === entry.robotId);
-    const subsystems = robot ? robot.subsystems : [...new Set(robots.flatMap((r) => r.subsystems))];
-    if (entry.subsystem && !subsystems.includes(entry.subsystem)) subsystems.push(entry.subsystem);
+  const sectionChips = () =>
+    chips(
+      'Sección',
+      SECTIONS.map((s) => ({ value: s, label: SECTION_LABELS[s] })),
+      (v) => entry.section === v,
+      (v) => (entry.section === v ? delete entry.section : (entry.section = v)),
+      'section',
+    );
+  const kindChips = (label: string) =>
+    chips(
+      label,
+      ENTRY_KINDS.map((k) => ({ value: k, label: ENTRY_KIND_LABELS[k] })),
+      (v) => entry.kind === v,
+      (v) => (entry.kind === v ? delete entry.kind : (entry.kind = v)),
+      'kind',
+    );
+  const markChips = (label: string) =>
+    chips(
+      label,
+      ENTRY_MARKS.map((m) => ({ value: m, label: MARK_LABELS[m] })),
+      (v) => entry.marks.includes(v),
+      (v: EntryMark) => (entry.marks = entry.marks.includes(v) ? entry.marks.filter((x) => x !== v) : [...entry.marks, v]),
+      'marks',
+    );
 
-    const thread = h('input', { type: 'text', placeholder: 'Ej. "intake v2", "falla del brazo"', value: entry.thread ?? '', 'data-testid': 'thread-input', autocomplete: 'off' });
+  function threadField(label: string): HTMLElement {
+    const inputId = `thread-${entry.id}`;
+    const thread = h('input', { type: 'text', id: inputId, placeholder: 'Ej. "intake v2", "falla del brazo"', value: entry.thread ?? '', 'data-testid': 'thread-input', autocomplete: 'off' });
     thread.addEventListener('input', () => {
       const v = thread.value.trim();
       if (v) entry.thread = v;
@@ -317,9 +393,48 @@ export function renderEditor(root: HTMLElement, app: App, id: string, onDone: ()
       save();
     });
     thread.addEventListener('blur', () => save.flush());
-    const suggestions = app.threads().filter((t) => t !== entry.thread).slice(0, 8);
+    const suggestions = app.threads().filter((t) => t !== entry.thread).slice(0, full ? 8 : 4);
+    return h(
+      'div',
+      { class: 'chip-group' },
+      h('label', { class: 'field-label', for: inputId, text: label }),
+      thread,
+      suggestions.length > 0
+        ? h(
+            'div',
+            { class: 'chips' },
+            suggestions.map((t) => h('button', { class: 'chip ghost', type: 'button', onclick: () => ((entry.thread = t), changed()) }, t)),
+          )
+        : null,
+    );
+  }
 
-    setChildren(classBox,
+  let showAllPeople = false;
+  const people = () => (app.team?.members ?? []).filter((m) => m.active !== false);
+  const shownPeople = () => {
+    const present = app.presentIds(entry.sessionDate);
+    return showAllPeople ? people() : people().filter((m) => present.includes(m.id) || entry.authorIds.includes(m.id) || m.id === app.me);
+  };
+  const toggleAuthor = (id: string) => {
+    entry.authorIds = entry.authorIds.includes(id) ? entry.authorIds.filter((x) => x !== id) : [...entry.authorIds, id];
+    app.setLastAuthors(entry.authorIds);
+    saveNow();
+  };
+
+  function renderClass() {
+    if (full) renderFullClass();
+    else renderSimpleClass();
+  }
+
+  /** Computadora: todo a la vista, como antes. */
+  function renderFullClass() {
+    const robots = app.team?.robots ?? [];
+    const robot = robots.find((r) => r.id === entry.robotId);
+    const subsystems = robot ? [...robot.subsystems] : [...new Set(robots.flatMap((r) => r.subsystems))];
+    if (entry.subsystem && !subsystems.includes(entry.subsystem)) subsystems.push(entry.subsystem);
+    const shown = shownPeople();
+    setChildren(
+      classBox,
       h(
         'div',
         { class: 'chip-group', 'data-testid': 'authors' },
@@ -327,44 +442,17 @@ export function renderEditor(root: HTMLElement, app: App, id: string, onDone: ()
         h(
           'div',
           { class: 'chips' },
-          shownPeople.map((m) => {
+          shown.map((m) => {
             const on = entry.authorIds.includes(m.id);
-            return h(
-              'button',
-              {
-                class: `chip ${on ? 'on' : ''}`,
-                type: 'button',
-                'aria-pressed': String(on),
-                'data-value': m.id,
-                onclick: () => {
-                  entry.authorIds = on ? entry.authorIds.filter((x) => x !== m.id) : [...entry.authorIds, m.id];
-                  app.setLastAuthors(entry.authorIds);
-                  saveNow();
-                  renderClass();
-                },
-              },
-              m.name,
-            );
+            return h('button', { class: `chip ${on ? 'on' : ''}`, type: 'button', 'aria-pressed': String(on), 'data-value': m.id, onclick: () => (toggleAuthor(m.id), renderClass()) }, m.name);
           }),
-          shownPeople.length < people.length || showAllPeople
+          shown.length < people().length || showAllPeople
             ? h('button', { class: 'chip ghost', type: 'button', onclick: () => ((showAllPeople = !showAllPeople), renderClass()) }, showAllPeople ? 'Solo presentes' : 'Más personas…')
             : null,
         ),
       ),
-      chips(
-        'Sección',
-        SECTIONS.map((s) => ({ value: s, label: SECTION_LABELS[s] })),
-        (v) => entry.section === v,
-        (v) => (entry.section === v ? delete entry.section : (entry.section = v)),
-        'section',
-      ),
-      chips(
-        'Tipo de entrada',
-        ENTRY_KINDS.map((k) => ({ value: k, label: ENTRY_KIND_LABELS[k] })),
-        (v) => entry.kind === v,
-        (v) => (entry.kind === v ? delete entry.kind : (entry.kind = v)),
-        'kind',
-      ),
+      sectionChips(),
+      kindChips('Tipo de entrada'),
       robots.length > 0
         ? chips(
             'Robot',
@@ -381,27 +469,197 @@ export function renderEditor(root: HTMLElement, app: App, id: string, onDone: ()
         (v) => (entry.subsystem === v ? delete entry.subsystem : (entry.subsystem = v)),
         'subsystem',
       ),
-      chips(
-        'Marca',
-        ENTRY_MARKS.map((m) => ({ value: m, label: MARK_LABELS[m] })),
-        (v) => entry.marks.includes(v),
-        (v: EntryMark) => (entry.marks = entry.marks.includes(v) ? entry.marks.filter((x) => x !== v) : [...entry.marks, v]),
-        'marks',
+      markChips('Marca'),
+      threadField('Hilo (la historia a la que pertenece)'),
+    );
+  }
+
+  // --- celular: filas de resumen y hojas ------------------------------------------
+
+  let detailsOpen = false;
+
+  /** Una fila: etiqueta, valor actual (o "Elegir") y una línea fina opcional. */
+  function summaryRow(label: string, value: string, sub: string, onClick: () => void, testid: string, trailing?: string): HTMLElement {
+    return h(
+      'button',
+      { class: 'sum-row', type: 'button', 'data-testid': testid, 'aria-haspopup': 'dialog', onclick: onClick },
+      h(
+        'span',
+        { class: 'sum-text' },
+        h('span', { class: 'sum-label', text: label }),
+        h('span', { class: value ? 'sum-value' : 'sum-value unset', text: value || 'Elegir' }),
+        sub ? h('span', { class: 'sum-sub', text: sub }) : null,
       ),
+      trailing ? h('span', { class: 'sum-trailing', text: trailing }) : icon('chevron', 'icon chev'),
+    );
+  }
+
+  function renderSimpleClass() {
+    const robots = app.team?.robots ?? [];
+    const last = app.recent().last;
+    const lastValid = last && (!last.robotId || robots.some((r) => r.id === last.robotId)) ? last : undefined;
+    const blank = !entry.robotId && !entry.subsystem && !entry.kind;
+    const lastText = lastValid ? [targetLabel(robots, lastValid.robotId, lastValid.subsystem), whatOf(lastValid.kind)?.label].filter(Boolean).join(' · ') : '';
+
+    const target = targetLabel(robots, entry.robotId, entry.subsystem);
+    const what = whatOf(entry.kind);
+    const authors = entry.authorIds.map((id) => app.memberName(id).split(' ')[0]).join(', ');
+    const milestone = entry.marks.includes('milestone');
+    const extraMarks = entry.marks.filter((m) => m !== 'milestone' && m !== 'normal').map((m) => MARK_LABELS[m]);
+    const detailsSummary = [entry.section ? SECTION_LABELS[entry.section] : '', entry.kind ? ENTRY_KIND_LABELS[entry.kind] : '', ...extraMarks, entry.thread ? `Hilo: ${entry.thread}` : '']
+      .filter(Boolean)
+      .join(' · ');
+
+    const details = h(
+      'details',
+      { class: 'more', 'data-testid': 'more-details', open: detailsOpen },
+      h('summary', {}, h('span', { class: 'sum-text' }, h('span', { class: 'more-title', text: 'Más detalles' }), h('span', { class: 'sum-sub', text: detailsSummary || 'Sección, tipo exacto, marcas e hilo' }))),
+      h('div', { class: 'more-body' }, sectionChips(), kindChips('Tipo exacto'), markChips('Marcas'), threadField('Hilo (la historia a la que pertenece)')),
+    );
+    details.addEventListener('toggle', () => (detailsOpen = details.open));
+
+    setChildren(
+      classBox,
+      blank && lastValid && lastText
+        ? h(
+            'button',
+            { class: 'same-btn', type: 'button', 'data-testid': 'same-as-before', onclick: () => applyLast(lastValid) },
+            icon('repeat'),
+            h('span', { class: 'sum-text' }, h('span', { class: 'same-title', text: 'Igual que la anterior' }), h('span', { class: 'sum-sub', text: lastText })),
+          )
+        : null,
       h(
         'div',
-        { class: 'chip-group' },
-        h('label', { class: 'field-label', text: 'Hilo (la historia a la que pertenece)' }),
-        thread,
-        suggestions.length > 0
-          ? h(
-              'div',
-              { class: 'chips' },
-              suggestions.map((t) => h('button', { class: 'chip ghost', type: 'button', onclick: () => ((entry.thread = t), saveNow(), renderClass()) }, t)),
-            )
-          : null,
+        { class: 'sum-list' },
+        robots.length > 0 ? summaryRow('¿De qué es?', target, '', openTarget, 'class-target') : null,
+        summaryRow('¿Qué fue?', what ? what.label : '', what || entry.section ? exactLabel(entry) : '', openWhat, 'class-what'),
+        summaryRow('¿Quién?', authors, '', openAuthors, 'class-authors', '+ alguien más'),
+        h(
+          'button',
+          {
+            class: 'sum-row switch-row',
+            type: 'button',
+            role: 'switch',
+            'aria-checked': String(milestone),
+            'data-testid': 'milestone',
+            onclick: () => ((entry.marks = milestone ? entry.marks.filter((m) => m !== 'milestone') : [...entry.marks, 'milestone']), changed()),
+          },
+          h('span', { class: 'sum-text' }, h('span', { class: 'sum-value', text: 'Es un hito' }), h('span', { class: 'sum-sub', text: 'Un logro o algo que por fin funcionó' })),
+          h('span', { class: 'switch', 'aria-hidden': 'true' }),
+        ),
       ),
+      details,
     );
+  }
+
+  function applyLast(c: Classification) {
+    setTarget(entry, app.team?.robots ?? [], c.robotId, c.subsystem);
+    if (c.kind) entry.kind = c.kind;
+    if (c.section) entry.section = c.section;
+    changed();
+  }
+
+  function openTarget() {
+    const robots = app.team?.robots ?? [];
+    const sheet = openSheet('¿De qué es?', 'sheet-target');
+    const pick = (robotId?: string, subsystem?: string) => {
+      setTarget(entry, robots, robotId, subsystem);
+      sheet.close();
+      changed();
+      // Siguiente paso natural: si falta, se pregunta qué fue.
+      if ((robotId || subsystem) && !entry.kind) openWhat();
+    };
+    const opt = (robotId: string | undefined, subsystem: string | undefined, label: string) => {
+      const on = (entry.robotId ?? '') === (robotId ?? '') && (entry.subsystem ?? '') === (subsystem ?? '');
+      return h(
+        'button',
+        { class: `opt ${on ? 'on' : ''}`, type: 'button', 'aria-pressed': String(on), 'data-value': `${robotId ?? ''}|${subsystem ?? ''}`, onclick: () => pick(robotId, subsystem) },
+        on ? icon('check', 'icon sm') : null,
+        label,
+      );
+    };
+    const recentTargets = app
+      .recent()
+      .targets.filter((t) => (!t.robotId || robots.some((r) => r.id === t.robotId)) && (t.robotId || t.subsystem))
+      .slice(0, 4);
+    const known = robots.some((r) => r.id === entry.robotId && (!entry.subsystem || r.subsystems.includes(entry.subsystem)));
+    sheet.body.append(
+      ...[
+        recentTargets.length > 0
+          ? h('div', { class: 'opt-group', 'data-group': 'recent' }, h('h3', { text: 'Recientes' }), h('div', { class: 'opts' }, recentTargets.map((t) => opt(t.robotId, t.subsystem, targetLabel(robots, t.robotId, t.subsystem)))))
+          : null,
+        // Si la entrada trae algo que ya no está en el equipo, se muestra igual.
+        !known && (entry.robotId || entry.subsystem)
+          ? h('div', { class: 'opt-group' }, h('h3', { text: 'Actual' }), h('div', { class: 'opts' }, opt(entry.robotId, entry.subsystem, targetLabel(robots, entry.robotId, entry.subsystem))))
+          : null,
+        ...robots.map((r) =>
+          h('div', { class: 'opt-group', 'data-robot': r.id }, h('h3', { text: r.name }), h('div', { class: 'opts' }, ...r.subsystems.map((sub) => opt(r.id, sub, sub)), opt(r.id, undefined, 'Todo el robot'))),
+        ),
+        entry.robotId || entry.subsystem ? h('button', { class: 'btn-text', type: 'button', 'data-value': 'none', onclick: () => pick() }, 'Quitar') : null,
+      ].filter((x): x is NonNullable<typeof x> => x !== null),
+    );
+  }
+
+  function openWhat() {
+    const sheet = openSheet('¿Qué fue?', 'sheet-what');
+    const current = whatOf(entry.kind);
+    sheet.body.append(
+      ...[
+        h(
+          'div',
+          { class: 'sheet-list' },
+          WHAT_OPTIONS.map((o) =>
+            h(
+              'button',
+              {
+                class: `sheet-item ${current?.id === o.id ? 'on' : ''}`,
+                type: 'button',
+                'aria-pressed': String(current?.id === o.id),
+                'data-value': o.id,
+                onclick: () => {
+                  applyWhat(entry, o);
+                  sheet.close();
+                  changed();
+                },
+              },
+              h('span', { text: o.label }),
+              current?.id === o.id ? icon('check') : null,
+            ),
+          ),
+        ),
+        entry.kind || entry.section
+          ? h('button', { class: 'btn-text', type: 'button', 'data-value': 'none', onclick: () => (delete entry.kind, delete entry.section, sheet.close(), changed()) }, 'Quitar')
+          : null,
+      ].filter((x): x is NonNullable<typeof x> => x !== null),
+    );
+  }
+
+  function openAuthors() {
+    const sheet = openSheet('¿Quién lo hizo?', 'sheet-authors', () => renderClass());
+    const fill = () => {
+      const shown = shownPeople();
+      setChildren(
+        sheet.body,
+        h(
+          'div',
+          { class: 'sheet-list', 'data-testid': 'authors' },
+          shown.map((m) => {
+            const on = entry.authorIds.includes(m.id);
+            return h(
+              'button',
+              { class: `sheet-item ${on ? 'on' : ''}`, type: 'button', 'aria-pressed': String(on), 'data-value': m.id, onclick: () => (toggleAuthor(m.id), fill()) },
+              h('span', { text: m.name }),
+              on ? icon('check') : null,
+            );
+          }),
+        ),
+        shown.length < people().length || showAllPeople
+          ? h('button', { class: 'btn-text', type: 'button', onclick: () => ((showAllPeople = !showAllPeople), fill()) }, showAllPeople ? 'Solo quienes vinieron hoy' : 'Ver a todo el equipo')
+          : null,
+        h('button', { class: 'btn primary big', type: 'button', onclick: () => sheet.close() }, 'Listo'),
+      );
+    };
+    fill();
   }
 
   renderElements();

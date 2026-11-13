@@ -1,7 +1,7 @@
 import { isUnclassified, newId, type EntryElement } from '@vortex-wake/shared';
 import type { App } from '../app.ts';
 import { BUILD_LABEL } from '../pwa.ts';
-import { dateLabel, h, icon, setChildren, toast } from '../ui.ts';
+import { dateLabel, h, icon, openSheet, setChildren, toast } from '../ui.ts';
 import { entryCard, photoButton, syncBadge } from './common.ts';
 
 type Filter = 'all' | 'todo' | 'mine';
@@ -26,42 +26,48 @@ export function newElement(type: EntryElement['type']): EntryElement {
 }
 
 export function renderHome(root: HTMLElement, app: App, go: (hash: string) => void): () => void {
-  const header = h('header', { class: 'topbar' });
+  const header = h('header', { class: 'topbar home-top' });
   const list = h('div', { class: 'list', 'data-testid': 'entry-list' });
-  const filters = h('div', { class: 'filters', role: 'tablist' });
+  const filters = h('div', { class: 'filters', role: 'tablist', 'aria-label': 'Filtrar entradas' });
 
   const create = async (type: EntryElement['type']) => {
     const e = await app.saveEntry(app.newEntry([newElement(type)]));
     go(`#/entrada/${e.id}`);
   };
+  /** Foto primero: queda guardada; el aviso ofrece clasificarla ya. */
+  const savePhotos = (files: File[]) =>
+    void app.addPhotos(files).then(
+      (saved) =>
+        toast(files.length > 1 ? `${files.length} fotos guardadas` : 'Foto guardada', saved ? { label: 'Clasificar', testid: 'toast-classify', run: () => go(`#/entrada/${saved.id}`) } : undefined),
+      (e: Error) => toast(`No se pudo guardar: ${e.message}`),
+    );
+
+  const openMore = () => {
+    const sheet = openSheet('Agregar otra cosa', 'sheet-more');
+    const item = (testid: string, ic: Parameters<typeof icon>[0], label: string, type: EntryElement['type']) =>
+      h('button', { class: 'sheet-item', type: 'button', 'data-testid': testid, onclick: () => (sheet.close(), void create(type)) }, icon(ic), h('span', { text: label }));
+    sheet.body.append(
+      h(
+        'div',
+        { class: 'sheet-list' },
+        photoButton('Fotos de la galería', { camera: false, cls: 'sheet-item', testid: 'gallery-input', onFiles: (files) => (sheet.close(), savePhotos(files)) }),
+        item('new-trials', 'trials', 'Prueba (aciertos y fallos)', 'trials'),
+        item('new-link', 'link', 'Enlace', 'link'),
+        item('new-list', 'list', 'Lista', 'list'),
+        item('new-table', 'table', 'Tabla', 'table'),
+      ),
+    );
+  };
 
   const actions = h(
     'section',
-    { class: 'capture' },
-    photoButton('Foto', {
-      camera: true,
-      cls: 'btn-photo',
-      testid: 'photo-input',
-      onFiles: (files) =>
-        void app.addPhotos(files).then(
-          () => toast(files.length > 1 ? `${files.length} fotos guardadas` : 'Foto guardada'),
-          (e: Error) => toast(`No se pudo guardar: ${e.message}`),
-        ),
-    }),
+    { class: 'capture', 'aria-label': 'Capturar' },
+    photoButton('Foto', { camera: true, cls: 'btn-photo', testid: 'photo-input', onFiles: savePhotos }),
     h(
       'div',
       { class: 'quick' },
-      photoButton('Galería', {
-        camera: false,
-        cls: 'btn-quick',
-        testid: 'gallery-input',
-        onFiles: (files) => void app.addPhotos(files).then(() => toast(`${files.length} foto(s) guardada(s)`)),
-      }),
       h('button', { class: 'btn-quick', type: 'button', 'data-testid': 'new-text', onclick: () => void create('text') }, icon('text'), h('span', { text: 'Nota' })),
-      h('button', { class: 'btn-quick', type: 'button', 'data-testid': 'new-trials', onclick: () => void create('trials') }, icon('trials'), h('span', { text: 'Prueba' })),
-      h('button', { class: 'btn-quick', type: 'button', onclick: () => void create('link') }, icon('link'), h('span', { text: 'Enlace' })),
-      h('button', { class: 'btn-quick', type: 'button', onclick: () => void create('list') }, icon('list'), h('span', { text: 'Lista' })),
-      h('button', { class: 'btn-quick', type: 'button', onclick: () => void create('table') }, icon('table'), h('span', { text: 'Tabla' })),
+      h('button', { class: 'btn-quick', type: 'button', 'data-testid': 'more-actions', 'aria-haspopup': 'dialog', onclick: openMore }, icon('more'), h('span', { text: 'Más' })),
     ),
   );
 
@@ -73,16 +79,19 @@ export function renderHome(root: HTMLElement, app: App, go: (hash: string) => vo
     h('span', { class: 'muted small', 'data-testid': 'build', text: `Versión ${BUILD_LABEL}` }),
   );
 
-  root.replaceChildren(header, actions, filters, list, footer);
+  const banner = h('div', { class: 'sync-slot' });
+  root.replaceChildren(header, banner, actions, h('h2', { class: 'section-title', text: 'Hoy' }), filters, list, footer);
 
   const render = () => {
     const today = app.today;
     const present = app.presentIds(today);
-    header.replaceChildren(
+    const sync = syncBadge(app, true);
+    const quiet = sync.classList.contains('sync-quiet');
+    setChildren(header,
       h(
         'div',
         { class: 'topbar-row' },
-        h('div', {}, h('div', { class: 'eyebrow', text: 'Sesión del día' }), h('h1', { class: 'date', text: dateLabel(today) })),
+        h('h1', { class: 'date', text: dateLabel(today) }),
         h(
           'button',
           { class: 'me', type: 'button', 'data-testid': 'me', onclick: () => go('#/quien'), 'aria-label': 'Cambiar de persona' },
@@ -90,21 +99,27 @@ export function renderHome(root: HTMLElement, app: App, go: (hash: string) => vo
           h('span', { text: app.me ? app.memberName(app.me).split(' ')[0] ?? '' : '¿Quién?' }),
         ),
       ),
-      h('div', { class: 'present muted', text: present.length > 0 ? `Presentes: ${present.map((id) => app.memberName(id)).join(', ')}` : 'Nadie ha registrado asistencia' }),
-      syncBadge(app),
+      h(
+        'div',
+        { class: 'meta-row' },
+        h('span', { class: 'present muted', text: present.length > 0 ? `Presentes: ${present.map((id) => app.memberName(id).split(' ')[0]).join(', ')}` : 'Nadie ha registrado asistencia' }),
+        quiet ? sync : null,
+      ),
     );
+    setChildren(banner, quiet ? null : sync);
 
     const all = app.liveEntries(today);
     const todo = all.filter(isUnclassified);
     const mine = all.filter((e) => app.me && (e.authorIds.includes(app.me) || e.capturedBy === app.me));
     const tab = (id: Filter, label: string, n: number) =>
-      h('button', { class: `tab ${filter === id ? 'on' : ''}`, type: 'button', role: 'tab', 'aria-selected': String(filter === id), 'data-testid': `filter-${id}`, onclick: () => ((filter = id), render()) }, `${label} (${n})`);
+      h('button', { class: `tab ${filter === id ? 'on' : ''}`, type: 'button', role: 'tab', 'aria-selected': String(filter === id), 'data-testid': `filter-${id}`, onclick: () => ((filter = id), render()) }, label, h('span', { class: 'n', text: String(n) }));
     filters.replaceChildren(tab('all', 'Todas', all.length), tab('todo', 'Sin clasificar', todo.length), tab('mine', 'Mías', mine.length));
+    filters.hidden = all.length === 0;
 
     const shown = filter === 'todo' ? todo : filter === 'mine' ? mine : all;
     list.replaceChildren(
       ...(shown.length > 0
-        ? shown.map((e) => entryCard(app, e, (id) => go(`#/entrada/${id}`)))
+        ? shown.map((e) => entryCard(app, e, (id) => go(`#/entrada/${id}`), true))
         : [h('p', { class: 'empty muted', text: filter === 'all' ? 'Todavía no hay nada hoy. Toma una foto: con un toque queda guardada.' : 'Nada por aquí.' })]),
     );
   };
