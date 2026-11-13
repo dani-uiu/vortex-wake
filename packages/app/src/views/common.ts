@@ -61,7 +61,9 @@ export function entrySummary(e: Entry): string {
   return parts.join(' · ');
 }
 
-export function entryCard(app: App, e: Entry, onOpen: (id: string) => void, compact = false): HTMLElement {
+/** Tarjeta de una entrada. `phone`: lista del celular (pocas etiquetas); `desk`: computadora (clasificación completa). */
+export function entryCard(app: App, e: Entry, onOpen: (id: string) => void, variant: 'phone' | 'desk' = 'phone'): HTMLElement {
+  const compact = variant === 'phone';
   const photos = e.elements.filter((el) => el.type === 'photo');
   const thumb = h('div', { class: 'thumb' });
   const first = photos[0];
@@ -83,23 +85,25 @@ export function entryCard(app: App, e: Entry, onOpen: (id: string) => void, comp
     if (target) chips.push(h('span', { class: 'tag', text: target }));
     if (e.marks.includes('milestone')) chips.push(h('span', { class: 'tag mark', text: MARK_LABELS.milestone }));
   } else {
+    // Computadora: todo a la vista, para revisar sin abrir.
     if (isUnclassified(e)) chips.push(h('span', { class: 'tag todo', text: 'Sin clasificar' }));
     if (e.kind) chips.push(h('span', { class: 'tag', text: ENTRY_KIND_LABELS[e.kind] }));
     if (e.section) chips.push(h('span', { class: 'tag', text: SECTION_LABELS[e.section] }));
-    if (e.subsystem) chips.push(h('span', { class: 'tag', text: e.subsystem }));
+    const target = targetLabel(app.team?.robots ?? [], e.robotId, e.subsystem);
+    if (target) chips.push(h('span', { class: 'tag', text: target }));
     for (const m of e.marks) if (m !== 'normal') chips.push(h('span', { class: 'tag mark', text: MARK_LABELS[m] }));
-    if (e.thread) chips.push(h('span', { class: 'tag', text: `Hilo: ${e.thread}` }));
+    if (e.thread && e.thread !== target) chips.push(h('span', { class: 'tag thread', text: `Hilo: ${e.thread}` }));
   }
   const summary = entrySummary(e);
   const authors = e.authorIds.map((id) => app.memberName(id)).join(', ');
   return h(
     'button',
-    { class: `card${compact ? ' compact' : ''}`, type: 'button', 'data-entry': e.id, onclick: () => onOpen(e.id) },
+    { class: `card card-${variant}${isUnclassified(e) ? ' todo' : ''}`, type: 'button', 'data-entry': e.id, onclick: () => onOpen(e.id) },
     thumb,
     h(
       'div',
       { class: 'card-body' },
-      h('div', { class: 'card-top' }, h('span', { class: 'time', text: timeOf(e.createdAt) }), statusPill(app, e, compact)),
+      h('div', { class: 'card-top' }, h('span', { class: 'time', text: timeOf(e.createdAt) }), statusPill(app, e, true)),
       summary ? h('div', { class: 'summary', text: summary }) : h('div', { class: 'summary muted', text: photos.length > 0 ? (photos.length === 1 ? 'Foto' : `${photos.length} fotos`) : 'Vacía' }),
       chips.length > 0 ? h('div', { class: 'tags' }, chips) : null,
       authors ? h('div', { class: 'authors muted', text: authors }) : null,

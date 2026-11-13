@@ -387,7 +387,23 @@ try {
   log(`PC: bitácora generada en el navegador (${(bytes.length / 1024).toFixed(0)} KB): ${await d.textContent('[data-testid=generate-report]')}`);
   await d.locator('.desk .card').first().click();
   await d.waitForSelector('.panel [data-testid=marks]');
+  // "Más detalles" abierto por defecto, con la clasificación completa a la vista.
+  assert(await d.locator('.panel [data-testid=more-details]').evaluate((x) => (x as HTMLDetailsElement).open), 'en la computadora "Más detalles" va abierto');
+  for (const t of ['class-target', 'class-what', 'class-authors', 'milestone', 'mark-change', 'section', 'kind-select', 'thread-input']) assert((await d.locator(`.panel [data-testid=${t}]`).count()) === 1, `el editor de la computadora muestra ${t}`);
   await shot(d, '10-escritorio-editor');
+  // Siguiente sin cerrar el panel: con la tecla J y con el botón.
+  const pos1 = await d.textContent('[data-testid=editor-position]');
+  await d.keyboard.press('j');
+  await until('J pasa a la siguiente entrada', async () => (await d.textContent('[data-testid=editor-position]')) !== pos1);
+  const nextId = await d.locator('.desk .card.selected').getAttribute('data-entry');
+  // Marca "Cambio" desde su interruptor; llega al servidor.
+  await d.click('.panel [data-testid=mark-change]');
+  await until('"Cambio" desde la computadora llega al servidor', async () => (await liveEntries()).find((e) => e.id === nextId && e.marks.includes('change')));
+  await d.click('[data-testid=editor-prev]');
+  await until('el botón anterior regresa', async () => (await d.textContent('[data-testid=editor-position]')) === pos1);
+  await d.keyboard.press('Escape');
+  await until('Esc cierra el panel', async () => (await d.locator('.panel[hidden]').count()) === 1);
+  log('PC: editor con la clasificación completa, siguiente/anterior (J y botones), "Cambio" y Esc');
 
   if (!NUBE) {
     // Con el servidor local no hay service worker, ni en localhost (que sí es contexto seguro).

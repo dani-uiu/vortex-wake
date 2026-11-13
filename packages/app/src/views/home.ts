@@ -119,7 +119,7 @@ export function renderHome(root: HTMLElement, app: App, go: (hash: string) => vo
     const shown = filter === 'todo' ? todo : filter === 'mine' ? mine : all;
     list.replaceChildren(
       ...(shown.length > 0
-        ? shown.map((e) => entryCard(app, e, (id) => go(`#/entrada/${id}`), true))
+        ? shown.map((e) => entryCard(app, e, (id) => go(`#/entrada/${id}`), 'phone'))
         : [h('p', { class: 'empty muted', text: filter === 'all' ? 'Todavía no hay nada hoy. Toma una foto: con un toque queda guardada.' : 'Nada por aquí.' })]),
     );
   };

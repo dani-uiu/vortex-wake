@@ -24,10 +24,10 @@ Desarrollo con recarga: `npm run servidor` en una terminal y `npm run dev -w @vo
   - **¿Quién?** por defecto quien tiene el teléfono; "+ alguien más".
   - **Es un hito** (interruptor) y **Más detalles** plegado: sección, tipo exacto, todas las marcas e hilo. El hilo se propone solo (robot · subsistema) mientras nadie lo escriba a mano.
   - **Igual que la anterior:** si la entrada está sin clasificar, propone (sin aplicarlo) lo último que esa persona usó en ese teléfono (`localStorage` `vw.recent.<id>`; no se manda al servidor).
-- En la **vista de computadora** el editor muestra la clasificación completa con chips, como antes.
+- En la **vista de computadora** el editor usa las mismas filas; las hojas se abren como menús junto al botón, "Más detalles" va abierto y compacto (sección, tipo exacto con aviso si la plantilla no lo trae en esa sección, otras marcas, hilo) y "Cambio" está a la vista junto a "Es un hito".
 - **Lista del día** de todo el equipo, con filtros "Sin clasificar" y "Mías", y edición de entradas propias y ajenas.
 - **Cierre de sesión** con tres preguntas.
-- **Vista de computadora** (`#/escritorio`, o "Vista de computadora" al pie): línea de tiempo por sesión, edición en un panel, equipo (integrantes y robots) y **Generar bitácora**, que arma el documento (`shared/assemble.ts`) y genera el `.pptx` en el navegador con `packages/generator` (se carga solo al usarlo).
+- **Vista de computadora** (`#/escritorio`, o "Vista de computadora" al pie): línea de tiempo por sesión (con cuántas faltan por clasificar y filtro "Sin clasificar"), edición en un panel con anterior/siguiente (teclas J/K, Esc cierra), equipo (integrantes y robots) y **Generar bitácora**, que arma el documento (`shared/assemble.ts`) y genera el `.pptx` en el navegador con `packages/generator` (se carga solo al usarlo).
 
 ## Cómo no se pierde nada
 

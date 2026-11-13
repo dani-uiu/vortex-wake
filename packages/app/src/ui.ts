@@ -45,6 +45,10 @@ export const ICONS = {
   download: svg('<path d="M12 4v11M7 10l5 5 5-5M5 20h14"/>'),
   edit: svg('<path d="M4 20h4L19 9l-4-4L4 16z"/>'),
   chevron: svg('<path d="m9 6 6 6-6 6"/>'),
+  up: svg('<path d="m6 15 6-6 6 6"/>'),
+  down: svg('<path d="m6 9 6 6 6-6"/>'),
+  qr: svg('<rect x="4" y="4" width="6" height="6"/><rect x="14" y="4" width="6" height="6"/><rect x="4" y="14" width="6" height="6"/><path d="M14 14h2v2h-2zM18 18h2v2h-2zM14 18h2M18 14h2"/>'),
+  team: svg('<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0"/><path d="M16 4.5a3.5 3.5 0 0 1 0 7M18 14.5a6.5 6.5 0 0 1 3.5 5.5"/>'),
   more: svg('<circle cx="5" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="19" cy="12" r="1.5"/>'),
   repeat: svg('<path d="M17 2l3 3-3 3"/><path d="M4 11V9a4 4 0 0 1 4-4h12"/><path d="M7 22l-3-3 3-3"/><path d="M20 13v2a4 4 0 0 1-4 4H4"/>'),
   flag: svg('<path d="M5 21V4M5 4h11l-2 4 2 4H5"/>'),
@@ -88,14 +92,40 @@ export interface Sheet {
   close(): void;
 }
 
+/** Pantalla ancha (computadora): las hojas se abren como menús anclados al botón que las abrió. */
+export const WIDE_QUERY = '(min-width: 900px)';
+
 /**
  * Hoja inferior (un `<dialog>` modal): se cierra con la X, tocando fuera o
  * con Esc. `body` se puede volver a llenar mientras está abierta.
+ *
+ * Con `anchor` y pantalla ancha se muestra como menú junto a ese botón (abajo
+ * o, si no cabe, arriba), en vez de una hoja de celular estirada.
  */
-export function openSheet(title: string, testid: string, onClose?: () => void): Sheet {
+export function openSheet(title: string, testid: string, onClose?: () => void, anchor?: HTMLElement): Sheet {
   hideToast();
   const body = h('div', { class: 'sheet-body' });
   const dlg = h('dialog', { class: 'sheet', 'data-testid': testid, 'aria-label': title });
+  const pop = !!anchor && matchMedia(WIDE_QUERY).matches;
+  let ro: ResizeObserver | undefined;
+  if (pop && anchor) {
+    dlg.classList.add('popover');
+    const place = () => {
+      const r = anchor.getBoundingClientRect();
+      const w = Math.min(Math.max(r.width, 340), innerWidth - 32);
+      const left = Math.min(Math.max(16, r.left), innerWidth - w - 16);
+      const hgt = dlg.offsetHeight;
+      let top = r.bottom + 6;
+      if (top + hgt > innerHeight - 16) top = Math.max(16, Math.min(r.top - 6 - hgt, innerHeight - 16 - hgt));
+      dlg.style.width = `${w}px`;
+      dlg.style.left = `${left}px`;
+      dlg.style.top = `${top}px`;
+    };
+    ro = new ResizeObserver(place);
+    ro.observe(dlg);
+    requestAnimationFrame(place);
+  }
+  dlg.addEventListener('close', () => ro?.disconnect());
   const close = () => {
     if (dlg.open) dlg.close();
   };

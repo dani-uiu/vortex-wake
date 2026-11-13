@@ -3,10 +3,15 @@
  * tabla, contador de pruebas) y clasificación. Todo se guarda solo, al
  * instante, en el teléfono.
  *
- * En el celular la clasificación son pocas filas de resumen ("¿De qué es?",
- * "¿Qué fue?", "¿Quién?", "Es un hito") que abren hojas inferiores, más
- * "Más detalles" plegado con sección, tipo exacto, marcas e hilo. En la vista
- * de computadora (`full`) se ve completa, con todos los chips.
+ * La clasificación son pocas filas de resumen ("¿De qué es?", "¿Qué fue?",
+ * "¿Quién?", "Es un hito") que abren hojas, más "Más detalles" con sección,
+ * tipo exacto, marcas e hilo.
+ *
+ * - Celular (por omisión): hojas inferiores, "Más detalles" plegado y
+ *   "Igual que la anterior".
+ * - Computadora (`desk`): las hojas son menús anclados, "Más detalles" va
+ *   abierto y compacto, "Cambio" se ve junto a "Es un hito", y el encabezado
+ *   trae anterior/siguiente para revisar entradas seguidas.
  */
 
 import {
@@ -14,6 +19,7 @@ import {
   ENTRY_KIND_LABELS,
   ENTRY_MARKS,
   MARK_LABELS,
+  PAGE_TYPES,
   SECTION_LABELS,
   type Entry,
   type EntryElement,
@@ -30,15 +36,14 @@ import { newElement } from './home.ts';
 const SECTIONS: SectionId[] = ['mechanics', 'coding', 'wiring', 'strategy'];
 
 export interface EditorOptions {
-  /**
-   * Vista de computadora: clasificación completa a la vista (todos los chips),
-   * como antes. En el celular (por omisión) se usan filas de resumen y hojas.
-   */
-  full?: boolean;
+  /** Vista de computadora (ver arriba). */
+  desk?: boolean;
+  /** Anterior/siguiente en la lista que se está revisando (solo computadora). */
+  nav?: { prev?: () => void; next?: () => void; label?: string };
 }
 
 export function renderEditor(root: HTMLElement, app: App, id: string, onDone: () => void, opts: EditorOptions = {}): () => void {
-  const full = opts.full === true;
+  const desk = opts.desk === true;
   const found = app.entries.get(id);
   if (!found) {
     root.replaceChildren(h('div', { class: 'center' }, h('p', { text: 'No se encontró la entrada.' }), h('button', { class: 'btn', type: 'button', onclick: onDone }, 'Volver')));
@@ -64,25 +69,37 @@ export function renderEditor(root: HTMLElement, app: App, id: string, onDone: ()
 
   const status = h('span', { class: 'editor-status' });
   const elementsBox = h('div', { class: 'elements' });
-  const classBox = h('div', { class: full ? 'classify' : 'classify simple', 'data-testid': 'classify' });
+  const classBox = h('div', { class: desk ? 'classify simple is-desk' : 'classify simple', 'data-testid': 'classify' });
 
   const done = () => {
     save.flush();
     void saving.then(onDone);
   };
+  /** Cambiar de entrada sin cerrar el panel: primero se termina de guardar. */
+  const navTo = (fn: () => void) => () => {
+    save.flush();
+    void saving.then(fn);
+  };
 
+  const nav = opts.nav;
   const head = h(
     'header',
     { class: 'topbar editor-top' },
     h(
       'div',
       { class: 'topbar-row' },
-      h('button', { class: 'back', type: 'button', 'data-testid': 'editor-done', onclick: done }, icon('back'), 'Listo'),
-      full
-        ? h('span', { class: 'muted', text: `Entrada de las ${timeOf(entry.createdAt)}` })
-        : h('span', { class: 'editor-meta' }, h('span', { class: 'muted', text: timeOf(entry.createdAt) }), status),
+      h('button', { class: 'back', type: 'button', 'data-testid': 'editor-done', onclick: done, title: desk ? 'Cerrar (Esc)' : undefined }, icon('back'), 'Listo'),
+      h('span', { class: 'editor-meta' }, h('span', { class: 'muted', text: desk ? dayTime(entry) : timeOf(entry.createdAt) }), status),
+      nav
+        ? h(
+            'span',
+            { class: 'editor-nav' },
+            nav.label ? h('span', { class: 'muted small', 'data-testid': 'editor-position', text: nav.label }) : null,
+            h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'Entrada anterior', title: 'Anterior (K)', 'data-testid': 'editor-prev', disabled: !nav.prev, onclick: nav.prev ? navTo(nav.prev) : undefined }, icon('up')),
+            h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'Entrada siguiente', title: 'Siguiente (J)', 'data-testid': 'editor-next', disabled: !nav.next, onclick: nav.next ? navTo(nav.next) : undefined }, icon('down')),
+          )
+        : null,
     ),
-    full ? status : null,
   );
 
   const addKinds = [
@@ -93,32 +110,16 @@ export function renderEditor(root: HTMLElement, app: App, id: string, onDone: ()
     ['table', 'Tabla'],
   ] as const;
 
-  // Computadora: la barra de siempre. Celular: un solo botón "Agregar" que abre una hoja.
-  const addBar = full
-    ? h(
-        'div',
-        { class: 'add-bar' },
-        photoButton('Foto', { camera: true, cls: 'chip-btn', testid: 'editor-photo', onFiles: (f) => void addPhotos(f) }),
-        photoButton('Galería', { camera: false, cls: 'chip-btn', onFiles: (f) => void addPhotos(f) }),
-        ...(['text', 'link', 'list', 'table', 'trials'] as const).map((t) =>
-          h(
-            'button',
-            { class: 'chip-btn', type: 'button', 'data-add': t, onclick: () => addElement(t) },
-            icon(t),
-            h('span', { text: { text: 'Texto', link: 'Enlace', list: 'Lista', table: 'Tabla', trials: 'Prueba' }[t] }),
-          ),
-        ),
-      )
-    : h('button', { class: 'add-btn', type: 'button', 'data-testid': 'editor-add', 'aria-haspopup': 'dialog', onclick: () => openAdd() }, icon('plus'), h('span', { text: 'Agregar foto, texto…' }));
+  const addBar = h('button', { class: 'add-btn', type: 'button', 'data-testid': 'editor-add', 'aria-haspopup': 'dialog', onclick: () => openAdd() }, icon('plus'), h('span', { text: 'Agregar foto, texto…' }));
 
   function openAdd() {
-    const sheet = openSheet('Agregar', 'sheet-add');
+    const sheet = openSheet('Agregar', 'sheet-add', undefined, addBar);
     sheet.body.append(
       h(
         'div',
         { class: 'sheet-list' },
-        photoButton('Tomar foto', { camera: true, cls: 'sheet-item', testid: 'editor-photo', onFiles: (f) => (sheet.close(), void addPhotos(f)) }),
-        photoButton('Fotos de la galería', { camera: false, cls: 'sheet-item', onFiles: (f) => (sheet.close(), void addPhotos(f)) }),
+        photoButton(desk ? 'Foto (cámara)' : 'Tomar foto', { camera: true, cls: 'sheet-item', testid: 'editor-photo', onFiles: (f) => (sheet.close(), void addPhotos(f)) }),
+        photoButton(desk ? 'Fotos de la computadora' : 'Fotos de la galería', { camera: false, cls: 'sheet-item', onFiles: (f) => (sheet.close(), void addPhotos(f)) }),
         ...addKinds.map(([t, label]) =>
           h('button', { class: 'sheet-item', type: 'button', 'data-add': t, onclick: () => (sheet.close(), addElement(t)) }, icon(t), h('span', { text: label })),
         ),
@@ -129,7 +130,7 @@ export function renderEditor(root: HTMLElement, app: App, id: string, onDone: ()
   const del = h(
     'button',
     {
-      class: full ? 'btn danger' : 'btn-text danger',
+      class: 'btn-text danger',
       type: 'button',
       onclick: async () => {
         if (!confirm('¿Borrar esta entrada? Se borra para todo el equipo.')) return;
@@ -148,13 +149,19 @@ export function renderEditor(root: HTMLElement, app: App, id: string, onDone: ()
     head,
     h(
       'div',
-      { class: full ? 'editor' : 'editor simple' },
-      full ? h('h2', { class: 'section-title', text: 'Contenido' }) : null,
+      { class: desk ? 'editor simple is-desk' : 'editor simple' },
       elementsBox,
       addBar,
-      h('h2', { class: 'section-title', text: full ? 'Clasificación (opcional)' : 'Clasificar (opcional)' }),
+      h('h2', { class: 'section-title', text: desk ? 'Clasificación' : 'Clasificar (opcional)' }),
       classBox,
-      h('div', { class: 'editor-end' }, h('button', { class: 'btn primary big', type: 'button', onclick: done }, 'Listo'), del),
+      h(
+        'div',
+        { class: 'editor-end' },
+        desk && nav?.next
+          ? h('button', { class: 'btn primary big', type: 'button', 'data-testid': 'editor-save-next', onclick: navTo(nav.next) }, 'Listo, siguiente', icon('down'))
+          : h('button', { class: 'btn primary big', type: 'button', onclick: done }, 'Listo'),
+        del,
+      ),
     ),
   );
 
@@ -332,10 +339,10 @@ export function renderEditor(root: HTMLElement, app: App, id: string, onDone: ()
 
   // --- clasificación ---------------------------------------------------------------
 
-  /** Cambio de clasificación: se guarda ya, se recuerda en el teléfono y se vuelve a pintar. */
+  /** Cambio de clasificación: se guarda ya, se recuerda (solo en el teléfono) y se vuelve a pintar. */
   const changed = () => {
     saveNow();
-    if (!full) app.rememberClassification(entry);
+    if (!desk) app.rememberClassification(entry);
     renderClass();
   };
 
@@ -358,12 +365,16 @@ export function renderEditor(root: HTMLElement, app: App, id: string, onDone: ()
     );
   }
 
+  const toggleSection = (v: SectionId) => (entry.section === v ? delete entry.section : (entry.section = v));
+  const toggleKind = (v: (typeof ENTRY_KINDS)[number]) => (entry.kind === v ? delete entry.kind : (entry.kind = v));
+  const toggleMark = (v: EntryMark) => (entry.marks = entry.marks.includes(v) ? entry.marks.filter((x) => x !== v) : [...entry.marks, v]);
+
   const sectionChips = () =>
     chips(
       'Sección',
       SECTIONS.map((s) => ({ value: s, label: SECTION_LABELS[s] })),
       (v) => entry.section === v,
-      (v) => (entry.section === v ? delete entry.section : (entry.section = v)),
+      toggleSection,
       'section',
     );
   const kindChips = (label: string) =>
@@ -371,7 +382,7 @@ export function renderEditor(root: HTMLElement, app: App, id: string, onDone: ()
       label,
       ENTRY_KINDS.map((k) => ({ value: k, label: ENTRY_KIND_LABELS[k] })),
       (v) => entry.kind === v,
-      (v) => (entry.kind === v ? delete entry.kind : (entry.kind = v)),
+      toggleKind,
       'kind',
     );
   const markChips = (label: string) =>
@@ -379,13 +390,12 @@ export function renderEditor(root: HTMLElement, app: App, id: string, onDone: ()
       label,
       ENTRY_MARKS.map((m) => ({ value: m, label: MARK_LABELS[m] })),
       (v) => entry.marks.includes(v),
-      (v: EntryMark) => (entry.marks = entry.marks.includes(v) ? entry.marks.filter((x) => x !== v) : [...entry.marks, v]),
+      toggleMark,
       'marks',
     );
 
-  function threadField(label: string): HTMLElement {
-    const inputId = `thread-${entry.id}`;
-    const thread = h('input', { type: 'text', id: inputId, placeholder: 'Ej. "intake v2", "falla del brazo"', value: entry.thread ?? '', 'data-testid': 'thread-input', autocomplete: 'off' });
+  function threadInput(): HTMLInputElement {
+    const thread = h('input', { type: 'text', id: `thread-${entry.id}`, placeholder: 'Ej. "intake v2", "falla del brazo"', value: entry.thread ?? '', 'data-testid': 'thread-input', autocomplete: 'off' });
     thread.addEventListener('input', () => {
       const v = thread.value.trim();
       if (v) entry.thread = v;
@@ -393,11 +403,16 @@ export function renderEditor(root: HTMLElement, app: App, id: string, onDone: ()
       save();
     });
     thread.addEventListener('blur', () => save.flush());
-    const suggestions = app.threads().filter((t) => t !== entry.thread).slice(0, full ? 8 : 4);
+    return thread;
+  }
+
+  function threadField(label: string): HTMLElement {
+    const thread = threadInput();
+    const suggestions = app.threads().filter((t) => t !== entry.thread).slice(0, 4);
     return h(
       'div',
       { class: 'chip-group' },
-      h('label', { class: 'field-label', for: inputId, text: label }),
+      h('label', { class: 'field-label', for: thread.id, text: label }),
       thread,
       suggestions.length > 0
         ? h(
@@ -409,6 +424,66 @@ export function renderEditor(root: HTMLElement, app: App, id: string, onDone: ()
     );
   }
 
+  /**
+   * Computadora: "Más detalles" compacto en dos columnas. Sección en un
+   * selector de cuatro, tipo exacto en una lista desplegable (avisa si la
+   * plantilla no lo trae en esa sección), las marcas que no están arriba como
+   * botones chicos y el hilo con sugerencias.
+   */
+  function deskDetails(): HTMLElement {
+    const sectionSeg = h(
+      'div',
+      { class: 'seg', role: 'group', 'aria-label': 'Sección', 'data-testid': 'section' },
+      SECTIONS.map((s) =>
+        h('button', { class: `seg-btn ${entry.section === s ? 'on' : ''}`, type: 'button', 'aria-pressed': String(entry.section === s), 'data-value': s, onclick: () => (toggleSection(s), changed()) }, SECTION_LABELS[s]),
+      ),
+    );
+    const kindSel = h(
+      'select',
+      { id: `kind-${entry.id}`, class: 'compact', 'data-testid': 'kind-select' },
+      h('option', { value: '', text: 'Sin tipo (trabajo del día)' }),
+      ENTRY_KINDS.map((k) => {
+        const allowed: readonly SectionId[] | undefined = PAGE_TYPES[k].sections;
+        const off = entry.section && allowed && !allowed.includes(entry.section);
+        return h('option', { value: k, text: off ? `${ENTRY_KIND_LABELS[k]} (no va en ${SECTION_LABELS[entry.section as SectionId]})` : ENTRY_KIND_LABELS[k] });
+      }),
+    );
+    kindSel.value = entry.kind ?? '';
+    kindSel.addEventListener('change', () => {
+      const v = kindSel.value as (typeof ENTRY_KINDS)[number] | '';
+      if (v) entry.kind = v;
+      else delete entry.kind;
+      changed();
+    });
+    const allowed: readonly SectionId[] | undefined = entry.kind ? PAGE_TYPES[entry.kind].sections : undefined;
+    const mismatch = entry.kind && entry.section && allowed && !allowed.includes(entry.section);
+    const otherMarks = ENTRY_MARKS.filter((m) => m !== 'milestone' && m !== 'change');
+    const thread = threadInput();
+    const listId = `threads-${entry.id}`;
+    thread.setAttribute('list', listId);
+    const row = (label: string, forId: string | undefined, control: HTMLElement) =>
+      h('div', { class: 'form-row' }, forId ? h('label', { class: 'form-label', for: forId, text: label }) : h('span', { class: 'form-label', text: label }), control);
+    return h(
+      'div',
+      { class: 'form-grid' },
+      row('Sección', undefined, sectionSeg),
+      row('Tipo exacto', kindSel.id, h('div', { class: 'stack-tight' }, kindSel, mismatch ? h('p', { class: 'warn-text small', 'data-testid': 'kind-warning', text: `La plantilla no trae «${ENTRY_KIND_LABELS[entry.kind!]}» en ${SECTION_LABELS[entry.section!]}: al generar quedará como trabajo del día.` }) : null)),
+      row(
+        'Otras marcas',
+        undefined,
+        h(
+          'div',
+          { class: 'chips small', 'data-testid': 'marks', role: 'group', 'aria-label': 'Otras marcas' },
+          otherMarks.map((m) => {
+            const on = entry.marks.includes(m);
+            return h('button', { class: `chip ${on ? 'on' : ''}`, type: 'button', 'aria-pressed': String(on), 'data-value': m, onclick: () => (toggleMark(m), changed()) }, MARK_LABELS[m]);
+          }),
+        ),
+      ),
+      row('Hilo', thread.id, h('div', {}, thread, h('datalist', { id: listId }, app.threads().filter((t) => t !== entry.thread).slice(0, 20).map((t) => h('option', { value: t }))))),
+    );
+  }
+
   let showAllPeople = false;
   const people = () => (app.team?.members ?? []).filter((m) => m.active !== false);
   const shownPeople = () => {
@@ -417,69 +492,15 @@ export function renderEditor(root: HTMLElement, app: App, id: string, onDone: ()
   };
   const toggleAuthor = (id: string) => {
     entry.authorIds = entry.authorIds.includes(id) ? entry.authorIds.filter((x) => x !== id) : [...entry.authorIds, id];
-    app.setLastAuthors(entry.authorIds);
+    if (!desk) app.setLastAuthors(entry.authorIds);
     saveNow();
   };
 
-  function renderClass() {
-    if (full) renderFullClass();
-    else renderSimpleClass();
-  }
-
-  /** Computadora: todo a la vista, como antes. */
-  function renderFullClass() {
-    const robots = app.team?.robots ?? [];
-    const robot = robots.find((r) => r.id === entry.robotId);
-    const subsystems = robot ? [...robot.subsystems] : [...new Set(robots.flatMap((r) => r.subsystems))];
-    if (entry.subsystem && !subsystems.includes(entry.subsystem)) subsystems.push(entry.subsystem);
-    const shown = shownPeople();
-    setChildren(
-      classBox,
-      h(
-        'div',
-        { class: 'chip-group', 'data-testid': 'authors' },
-        h('div', { class: 'field-label', text: 'Autores' }),
-        h(
-          'div',
-          { class: 'chips' },
-          shown.map((m) => {
-            const on = entry.authorIds.includes(m.id);
-            return h('button', { class: `chip ${on ? 'on' : ''}`, type: 'button', 'aria-pressed': String(on), 'data-value': m.id, onclick: () => (toggleAuthor(m.id), renderClass()) }, m.name);
-          }),
-          shown.length < people().length || showAllPeople
-            ? h('button', { class: 'chip ghost', type: 'button', onclick: () => ((showAllPeople = !showAllPeople), renderClass()) }, showAllPeople ? 'Solo presentes' : 'Más personas…')
-            : null,
-        ),
-      ),
-      sectionChips(),
-      kindChips('Tipo de entrada'),
-      robots.length > 0
-        ? chips(
-            'Robot',
-            robots.map((r) => ({ value: r.id, label: r.name })),
-            (v) => entry.robotId === v,
-            (v) => (entry.robotId === v ? delete entry.robotId : (entry.robotId = v)),
-            'robot',
-          )
-        : null,
-      chips(
-        'Subsistema',
-        subsystems.map((s) => ({ value: s, label: s })),
-        (v) => entry.subsystem === v,
-        (v) => (entry.subsystem === v ? delete entry.subsystem : (entry.subsystem = v)),
-        'subsystem',
-      ),
-      markChips('Marca'),
-      threadField('Hilo (la historia a la que pertenece)'),
-    );
-  }
-
-  // --- celular: filas de resumen y hojas ------------------------------------------
-
-  let detailsOpen = false;
+  /** "Más detalles": plegado en el celular, abierto en la computadora. */
+  let detailsOpen = desk;
 
   /** Una fila: etiqueta, valor actual (o "Elegir") y una línea fina opcional. */
-  function summaryRow(label: string, value: string, sub: string, onClick: () => void, testid: string, trailing?: string): HTMLElement {
+  function summaryRow(label: string, value: string, sub: string, onClick: (ev: Event) => void, testid: string, trailing?: string): HTMLElement {
     return h(
       'button',
       { class: 'sum-row', type: 'button', 'data-testid': testid, 'aria-haspopup': 'dialog', onclick: onClick },
@@ -494,27 +515,40 @@ export function renderEditor(root: HTMLElement, app: App, id: string, onDone: ()
     );
   }
 
-  function renderSimpleClass() {
+  function markSwitch(mark: EntryMark, title: string, sub: string, testid: string): HTMLElement {
+    const on = entry.marks.includes(mark);
+    return h(
+      'button',
+      { class: 'sum-row switch-row', type: 'button', role: 'switch', 'aria-checked': String(on), 'data-testid': testid, onclick: () => (toggleMark(mark), changed()) },
+      h('span', { class: 'sum-text' }, h('span', { class: 'sum-value', text: title }), h('span', { class: 'sum-sub', text: sub })),
+      h('span', { class: 'switch', 'aria-hidden': 'true' }),
+    );
+  }
+
+  /** El botón que abrió la hoja, para anclar el menú en la computadora. */
+  const anchorOf = (ev: Event) => (ev.currentTarget instanceof HTMLElement ? ev.currentTarget : undefined);
+
+  function renderClass() {
     const robots = app.team?.robots ?? [];
-    const last = app.recent().last;
+    const last = desk ? undefined : app.recent().last;
     const lastValid = last && (!last.robotId || robots.some((r) => r.id === last.robotId)) ? last : undefined;
     const blank = !entry.robotId && !entry.subsystem && !entry.kind;
     const lastText = lastValid ? [targetLabel(robots, lastValid.robotId, lastValid.subsystem), whatOf(lastValid.kind)?.label].filter(Boolean).join(' · ') : '';
 
     const target = targetLabel(robots, entry.robotId, entry.subsystem);
     const what = whatOf(entry.kind);
-    const authors = entry.authorIds.map((id) => app.memberName(id).split(' ')[0]).join(', ');
-    const milestone = entry.marks.includes('milestone');
-    const extraMarks = entry.marks.filter((m) => m !== 'milestone' && m !== 'normal').map((m) => MARK_LABELS[m]);
+    const authors = entry.authorIds.map((id) => (desk ? app.memberName(id) : app.memberName(id).split(' ')[0])).join(', ');
+    const hiddenMarks = desk ? ['milestone', 'change', 'normal'] : ['milestone', 'normal'];
+    const extraMarks = entry.marks.filter((m) => !hiddenMarks.includes(m)).map((m) => MARK_LABELS[m]);
     const detailsSummary = [entry.section ? SECTION_LABELS[entry.section] : '', entry.kind ? ENTRY_KIND_LABELS[entry.kind] : '', ...extraMarks, entry.thread ? `Hilo: ${entry.thread}` : '']
       .filter(Boolean)
       .join(' · ');
 
     const details = h(
       'details',
-      { class: 'more', 'data-testid': 'more-details', open: detailsOpen },
+      { class: desk ? 'more is-desk' : 'more', 'data-testid': 'more-details', open: detailsOpen },
       h('summary', {}, h('span', { class: 'sum-text' }, h('span', { class: 'more-title', text: 'Más detalles' }), h('span', { class: 'sum-sub', text: detailsSummary || 'Sección, tipo exacto, marcas e hilo' }))),
-      h('div', { class: 'more-body' }, sectionChips(), kindChips('Tipo exacto'), markChips('Marcas'), threadField('Hilo (la historia a la que pertenece)')),
+      desk ? h('div', { class: 'more-body' }, deskDetails()) : h('div', { class: 'more-body' }, sectionChips(), kindChips('Tipo exacto'), markChips('Marcas'), threadField('Hilo (la historia a la que pertenece)')),
     );
     details.addEventListener('toggle', () => (detailsOpen = details.open));
 
@@ -531,22 +565,15 @@ export function renderEditor(root: HTMLElement, app: App, id: string, onDone: ()
       h(
         'div',
         { class: 'sum-list' },
-        robots.length > 0 ? summaryRow('¿De qué es?', target, '', openTarget, 'class-target') : null,
-        summaryRow('¿Qué fue?', what ? what.label : '', what || entry.section ? exactLabel(entry) : '', openWhat, 'class-what'),
-        summaryRow('¿Quién?', authors, '', openAuthors, 'class-authors', '+ alguien más'),
-        h(
-          'button',
-          {
-            class: 'sum-row switch-row',
-            type: 'button',
-            role: 'switch',
-            'aria-checked': String(milestone),
-            'data-testid': 'milestone',
-            onclick: () => ((entry.marks = milestone ? entry.marks.filter((m) => m !== 'milestone') : [...entry.marks, 'milestone']), changed()),
-          },
-          h('span', { class: 'sum-text' }, h('span', { class: 'sum-value', text: 'Es un hito' }), h('span', { class: 'sum-sub', text: 'Un logro o algo que por fin funcionó' })),
-          h('span', { class: 'switch', 'aria-hidden': 'true' }),
-        ),
+        robots.length > 0 || target ? summaryRow('¿De qué es?', target, '', (ev) => openTarget(anchorOf(ev)), 'class-target') : null,
+        summaryRow('¿Qué fue?', what ? what.label : '', what || entry.section ? exactLabel(entry) : '', (ev) => openWhat(anchorOf(ev)), 'class-what'),
+        summaryRow('¿Quién?', authors, '', (ev) => openAuthors(anchorOf(ev)), 'class-authors', '+ alguien más'),
+      ),
+      h(
+        'div',
+        { class: desk ? 'sum-list switches' : 'sum-list' },
+        markSwitch('milestone', 'Es un hito', 'Un logro o algo que por fin funcionó', 'milestone'),
+        desk ? markSwitch('change', 'Cambio', 'Va al registro de cambios', 'mark-change') : null,
       ),
       details,
     );
@@ -559,15 +586,15 @@ export function renderEditor(root: HTMLElement, app: App, id: string, onDone: ()
     changed();
   }
 
-  function openTarget() {
+  function openTarget(anchor?: HTMLElement) {
     const robots = app.team?.robots ?? [];
-    const sheet = openSheet('¿De qué es?', 'sheet-target');
+    const sheet = openSheet('¿De qué es?', 'sheet-target', undefined, anchor);
     const pick = (robotId?: string, subsystem?: string) => {
       setTarget(entry, robots, robotId, subsystem);
       sheet.close();
       changed();
-      // Siguiente paso natural: si falta, se pregunta qué fue.
-      if ((robotId || subsystem) && !entry.kind) openWhat();
+      // Celular: siguiente paso natural, si falta, se pregunta qué fue.
+      if (!desk && (robotId || subsystem) && !entry.kind) openWhat();
     };
     const opt = (robotId: string | undefined, subsystem: string | undefined, label: string) => {
       const on = (entry.robotId ?? '') === (robotId ?? '') && (entry.subsystem ?? '') === (subsystem ?? '');
@@ -578,10 +605,12 @@ export function renderEditor(root: HTMLElement, app: App, id: string, onDone: ()
         label,
       );
     };
-    const recentTargets = app
-      .recent()
-      .targets.filter((t) => (!t.robotId || robots.some((r) => r.id === t.robotId)) && (t.robotId || t.subsystem))
-      .slice(0, 4);
+    const recentTargets = desk
+      ? []
+      : app
+          .recent()
+          .targets.filter((t) => (!t.robotId || robots.some((r) => r.id === t.robotId)) && (t.robotId || t.subsystem))
+          .slice(0, 4);
     const known = robots.some((r) => r.id === entry.robotId && (!entry.subsystem || r.subsystems.includes(entry.subsystem)));
     sheet.body.append(
       ...[
@@ -600,8 +629,8 @@ export function renderEditor(root: HTMLElement, app: App, id: string, onDone: ()
     );
   }
 
-  function openWhat() {
-    const sheet = openSheet('¿Qué fue?', 'sheet-what');
+  function openWhat(anchor?: HTMLElement) {
+    const sheet = openSheet('¿Qué fue?', 'sheet-what', undefined, anchor);
     const current = whatOf(entry.kind);
     sheet.body.append(
       ...[
@@ -623,6 +652,8 @@ export function renderEditor(root: HTMLElement, app: App, id: string, onDone: ()
                 },
               },
               h('span', { text: o.label }),
+              // En la computadora se ve a qué página de la bitácora va.
+              desk ? h('span', { class: 'item-hint', text: `${ENTRY_KIND_LABELS[o.kind]} · ${SECTION_LABELS[o.sections[0] as SectionId]}` }) : null,
               current?.id === o.id ? icon('check') : null,
             ),
           ),
@@ -634,8 +665,8 @@ export function renderEditor(root: HTMLElement, app: App, id: string, onDone: ()
     );
   }
 
-  function openAuthors() {
-    const sheet = openSheet('¿Quién lo hizo?', 'sheet-authors', () => renderClass());
+  function openAuthors(anchor?: HTMLElement) {
+    const sheet = openSheet('¿Quién lo hizo?', 'sheet-authors', () => renderClass(), anchor);
     const fill = () => {
       const shown = shownPeople();
       setChildren(
@@ -654,7 +685,7 @@ export function renderEditor(root: HTMLElement, app: App, id: string, onDone: ()
           }),
         ),
         shown.length < people().length || showAllPeople
-          ? h('button', { class: 'btn-text', type: 'button', onclick: () => ((showAllPeople = !showAllPeople), fill()) }, showAllPeople ? 'Solo quienes vinieron hoy' : 'Ver a todo el equipo')
+          ? h('button', { class: 'btn-text', type: 'button', onclick: () => ((showAllPeople = !showAllPeople), fill()) }, showAllPeople ? 'Solo quienes vinieron ese día' : 'Ver a todo el equipo')
           : null,
         h('button', { class: 'btn primary big', type: 'button', onclick: () => sheet.close() }, 'Listo'),
       );
@@ -672,4 +703,10 @@ export function renderEditor(root: HTMLElement, app: App, id: string, onDone: ()
     document.removeEventListener('visibilitychange', onHide);
     removeEventListener('pagehide', save.flush);
   };
+}
+
+/** "jue 12 nov · 06:25 p.m." (en la computadora se revisan varios días). */
+function dayTime(e: Entry): string {
+  const d = new Date(e.createdAt);
+  return `${d.toLocaleDateString('es-MX', { weekday: 'short', day: 'numeric', month: 'short' })} · ${timeOf(e.createdAt)}`;
 }
