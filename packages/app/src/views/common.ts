@@ -63,6 +63,8 @@ export function entrySummary(e: Entry): string {
       const labels = (el.annotations ?? []).flatMap((a) => (a.type === 'label' ? [`${a.letter}${a.what?.trim() ? ` ${a.what.trim()}` : ''}`] : []));
       if (labels.length > 0) parts.push(labels.join(', '));
     }
+    else if (el.type === 'devicemap') parts.push(`${el.kind === 'ports' ? 'Mapa de puertos' : 'Mapa del control'} (${Object.values(el.slots).filter((v) => v.trim()).length})`);
+    else if (el.type === 'audio') parts.push(el.caption?.trim() || `Nota de voz${el.durationMs ? ` (${Math.floor(el.durationMs / 60000)}:${String(Math.round((el.durationMs % 60000) / 1000) % 60).padStart(2, '0')})` : ''}`);
     else if (el.type === 'route') parts.push(`Ruta del autónomo: ${el.points.length} paso(s)`);
     else if (el.type === 'match') parts.push(['Partido', ...matchRow(el).slice(0, 3)].filter((s) => s).join(' · '));
   }
@@ -79,7 +81,7 @@ export function entryCard(app: App, e: Entry, onOpen: (id: string) => void, vari
     thumb.append(markedImage(app.photoUrl(first.photoId), annotationsToMarks(first.annotations), { fit: 'cover' }));
     if (photos.length > 1) thumb.append(h('span', { class: 'count', text: `+${photos.length - 1}` }));
   } else {
-    const kindIcon = e.elements.some((x) => x.type === 'trials') ? 'trials' : e.elements.some((x) => x.type === 'link') ? 'link' : 'text';
+    const kindIcon = e.elements.some((x) => x.type === 'trials') ? 'trials' : e.elements.some((x) => x.type === 'link') ? 'link' : e.elements.some((x) => x.type === 'audio') ? 'mic' : 'text';
     thumb.append(icon(kindIcon));
   }
   const chips: HTMLElement[] = [];

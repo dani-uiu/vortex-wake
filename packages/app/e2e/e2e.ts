@@ -625,6 +625,123 @@ try {
   await ctxE.close();
   log('Dictado: aviso la primera vez, texto en vivo en es-MX que llega al servidor; sin reconocimiento, sugerencia del teclado');
 
+  // --- Notas de voz: grabar necesita contexto seguro (localhost o HTTPS) -------------------
+  const secureLink = NUBE ? backend.captureLink() : `${backend.deskBase}/?k=${backend.captureKey}`;
+  /** Micrófono falso: un tono de un oscilador, grabado con el MediaRecorder de verdad. */
+  const fakeMic = () => {
+    navigator.mediaDevices.getUserMedia = async () => {
+      const ac = new AudioContext();
+      const osc = ac.createOscillator();
+      const dest = ac.createMediaStreamDestination();
+      osc.connect(dest);
+      osc.start();
+      return dest.stream;
+    };
+  };
+  const serverAudio = async (p: Page, id: string) =>
+    p.evaluate(async (path: string) => {
+      const r = await fetch(path, { headers: { 'x-team-key': localStorage.getItem('vw.key') ?? '' } });
+      return { status: r.status, type: r.headers.get('content-type'), size: (await r.arrayBuffer()).byteLength };
+    }, apiPath.audio(id));
+  const audioOf = (e: { elements: { type: string }[] }) => e.elements.find((x): x is { type: 'audio'; audioId: string; mime: string; durationMs?: number } => x.type === 'audio');
+
+  // Como en Firefox: sin reconocimiento de voz, el micrófono graba una nota de voz.
+  const ctxF = await browser.newContext(phone);
+  await ctxF.addInitScript(() => {
+    delete (window as unknown as { webkitSpeechRecognition?: unknown }).webkitSpeechRecognition;
+    delete (window as unknown as { SpeechRecognition?: unknown }).SpeechRecognition;
+  });
+  await ctxF.addInitScript(fakeMic);
+  const ff = await ctxF.newPage();
+  watch(ff, 'F');
+  await ff.goto(secureLink);
+  await ff.waitForSelector('[data-testid=who-select]');
+  await ff.selectOption('[data-testid=who-select]', 'carla');
+  await ff.click('[data-testid=who-enter]');
+  assert((await ff.locator('[data-testid=mic-settings]').count()) === 0, 'sin reconocimiento de voz no hay elección de modo');
+  await ff.click('[data-testid=new-text]');
+  await ff.fill('[data-testid=text-input]', 'Probamos el lanzador');
+  assert((await ff.getAttribute('.el-text [data-testid=dictate]', 'aria-label')) === 'Grabar nota de voz', 'en Firefox el micrófono graba');
+  await ff.click('.el-text [data-testid=dictate]');
+  await ff.waitForSelector('.el-text [data-testid=dictate].recording');
+  await ff.waitForTimeout(1500);
+  await ff.click('.el-text [data-testid=dictate]');
+  await ff.waitForSelector('[data-testid=voice-player]');
+  assert((await ff.locator('[data-el]').evaluateAll((els) => els.map((e) => e.getAttribute('data-el')))).join() === 'text,audio', 'la nota de voz queda después del texto');
+  await ff.fill('[data-testid=voice-caption]', 'Cómo sonó el lanzador');
+  await ff.waitForTimeout(400);
+  await shotBoth(ff, '30-nota-de-voz', false);
+
+  // Mapa de puertos del Brain sobre el dibujo, como la ruta del autónomo.
+  await ff.click('[data-testid=editor-add]');
+  await ff.click('[data-add=ports]');
+  await ff.waitForSelector('[data-testid=devicemap-editor]');
+  await ff.click('[data-testid=devicemap-canvas] [data-slot="1"]');
+  assert(await ff.evaluate(() => document.activeElement?.getAttribute('data-testid') === 'devicemap-current'), 'tocar el puerto 1 abre su campo bajo el dibujo');
+  await ff.keyboard.type('Motor izquierdo');
+  await ff.click('[data-testid=devicemap-canvas] [data-slot="A"]');
+  await ff.keyboard.type('Limit switch del brazo');
+  assert((await ff.locator('[data-testid=devicemap-canvas] .dm-slot.filled').count()) === 2, 'los puertos con algo se ven llenos');
+  await ff.waitForTimeout(300);
+  await shotBoth(ff, '31-mapa-de-puertos', false);
+  await ff.click('[data-testid=devicemap-done]');
+  await ff.click('[data-testid=editor-add]');
+  await ff.click('[data-add=controller]');
+  await ff.click('[data-testid=devicemap-canvas] [data-slot="R1"]');
+  await ff.keyboard.type('Intake');
+  await ff.click('[data-testid=devicemap-done]');
+  await ff.click('[data-testid=editor-done]');
+  await until('la nota de voz y los mapas llegan al servidor', async () =>
+    (await liveEntries()).some((e) => {
+      const a = audioOf(e);
+      const ports = e.elements.find((x) => x.type === 'devicemap' && x.kind === 'ports');
+      const ctl = e.elements.find((x) => x.type === 'devicemap' && x.kind === 'controller');
+      return !!a && (a as { caption?: string }).caption === 'Cómo sonó el lanzador' && ports?.type === 'devicemap' && ports.slots['1'] === 'Motor izquierdo' && ports.slots.A === 'Limit switch del brazo' && ctl?.type === 'devicemap' && ctl.slots.R1 === 'Intake' && e.section === 'wiring';
+    }));
+  const withAudio = (await liveEntries()).find((e) => audioOf(e) && e.elements.some((x) => x.type === 'text' && x.text === 'Probamos el lanzador'));
+  const voice = withAudio ? audioOf(withAudio) : undefined;
+  assert(!!voice && (voice.durationMs ?? 0) >= 1000, 'la nota de voz guarda su duración');
+  await until('el audio llega al servidor', async () => voice !== undefined && (await serverAudio(ff, voice.audioId)).status === 200);
+  const got = voice ? await serverAudio(ff, voice.audioId) : undefined;
+  assert(!!got && got.size > 500 && (got.type ?? '').startsWith('audio/'), `el servidor devuelve el audio (${JSON.stringify(got)})`);
+  await ctxF.close();
+
+  // Con reconocimiento de voz: se puede elegir "Solo grabar" (transcribir es lo normal).
+  const ctxG = await browser.newContext(phone);
+  await ctxG.addInitScript(() => {
+    class FakeRecognition {
+      start() {}
+      stop() {}
+    }
+    for (const name of ['SpeechRecognition', 'webkitSpeechRecognition']) Object.defineProperty(window, name, { value: FakeRecognition, configurable: true, writable: true });
+  });
+  await ctxG.addInitScript(fakeMic);
+  const gg = await ctxG.newPage();
+  watch(gg, 'G');
+  await gg.goto(secureLink);
+  await gg.waitForSelector('[data-testid=who-select]');
+  await gg.selectOption('[data-testid=who-select]', 'carla');
+  await gg.click('[data-testid=who-enter]');
+  await gg.waitForSelector('[data-testid=mic-settings]');
+  assert(((await gg.textContent('[data-testid=mic-settings]')) ?? '').includes('transcribir'), 'por omisión, el micrófono transcribe');
+  await gg.click('[data-testid=new-text]');
+  assert((await gg.getAttribute('.el-text [data-testid=dictate]', 'aria-label')) === 'Dictar', 'transcribir es lo normal');
+  await gg.click('[data-testid=editor-done]');
+  await gg.click('[data-testid=mic-settings]');
+  await gg.click('[data-testid=sheet-mic] [data-mode=record]');
+  assert(((await gg.textContent('[data-testid=mic-settings]')) ?? '').includes('solo grabar'), 'se eligió solo grabar');
+  await gg.click('[data-testid=new-text]');
+  await gg.fill('[data-testid=text-input]', 'Con solo grabar');
+  await gg.click('.el-text [data-testid=dictate]');
+  await gg.waitForSelector('.el-text [data-testid=dictate].recording');
+  await gg.waitForTimeout(800);
+  await gg.click('.el-text [data-testid=dictate]');
+  await gg.waitForSelector('[data-testid=voice-player]');
+  await gg.click('[data-testid=editor-done]');
+  await until('con "Solo grabar" la nota de voz llega', async () => (await liveEntries()).some((e) => audioOf(e) && e.elements.some((x) => x.type === 'text' && x.text === 'Con solo grabar')));
+  await ctxG.close();
+  log('Notas de voz: en Firefox el micrófono graba; con reconocimiento se elige transcribir o solo grabar; mapas del Brain y del control en la entrada');
+
   if (NUBE) {
     // Con la clave de captura no se entra a la vista de computadora ni al QR.
     await b.goto(`${base}/#/escritorio`);

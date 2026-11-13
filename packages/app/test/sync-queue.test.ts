@@ -33,6 +33,11 @@ class FakeServer implements Transport {
     this.check(`photo:${id}`);
     this.photos.set(id, bytes);
   }
+  audio = new Map<string, { bytes: Uint8Array; mime: string }>();
+  async putAudio(id: string, bytes: Uint8Array, mime: string) {
+    this.check(`audio:${id}`);
+    this.audio.set(id, { bytes, mime });
+  }
   async attend(_date: string, a: Attendance) {
     this.check(`attendance:${a.memberId}`);
     this.attendance.push(a);
@@ -66,6 +71,18 @@ function setup() {
 }
 
 describe('cola de sincronización', () => {
+  it('la nota de voz se manda antes que la entrada que la usa, con su tipo', async () => {
+    const { store, server, queue } = setup();
+    store.entries.set('e1', entry('e1', '2026-11-12T10:00:00Z', { elements: [{ id: 'x', type: 'audio', audioId: 'v1', mime: 'audio/ogg' }] }));
+    store.audio.set('v1', { bytes: new Uint8Array([1, 2, 3]), mime: 'audio/ogg' });
+    await queue.enqueue({ kind: 'entry', entryId: 'e1' });
+    await queue.enqueue({ kind: 'audio', audioId: 'v1' });
+    const r = await queue.flush();
+    expect(r.sent).toBe(2);
+    expect(server.calls).toEqual(['audio:v1', 'entry:e1']);
+    expect(server.audio.get('v1')?.mime).toBe('audio/ogg');
+  });
+
   it('sin conexión no se pierde nada; al volver se manda todo, fotos primero', async () => {
     const { store, server, queue, advance } = setup();
     server.online = false;

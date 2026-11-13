@@ -18,6 +18,8 @@ export const CONTENT_SECURITY_POLICY = [
   "script-src 'self'",
   "style-src 'self'",
   "img-src 'self' blob: data:",
+  // Notas de voz: las del teléfono se reproducen desde blob:, las demás desde /api/audio.
+  "media-src 'self' blob:",
   "connect-src 'self'",
   "font-src 'self'",
   "manifest-src 'self'",

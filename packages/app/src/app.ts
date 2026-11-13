@@ -4,6 +4,7 @@
  */
 
 import {
+  audioType,
   closingNudge,
   emptySession,
   later,
@@ -342,7 +343,7 @@ export class App {
   }
 
   entryStatus(e: Entry): EntryStatus {
-    const keys = [`entry:${e.id}`, ...e.elements.filter((el) => el.type === 'photo').map((el) => `photo:${(el as { photoId: string }).photoId}`)];
+    const keys = [`entry:${e.id}`, ...e.elements.flatMap((el) => (el.type === 'photo' ? [`photo:${el.photoId}`] : el.type === 'audio' ? [`audio:${el.audioId}`] : []))];
     let pending = false;
     for (const k of keys) {
       if (!this.pendingKeys.has(k)) continue;
@@ -575,6 +576,40 @@ export class App {
     const p = await this.db.getPhoto(id);
     if (p?.processed && isJpeg(p.bytes)) return new Uint8Array(p.bytes);
     return this.api.photo(id);
+  }
+
+  // --- notas de voz ------------------------------------------------------------------
+
+  /**
+   * Guarda una nota de voz en el teléfono y la agrega a la entrada (después
+   * del elemento `afterId`, si se da). Como las fotos: primero el audio y su
+   * envío, después la entrada.
+   */
+  async addAudio(entryId: string, blob: Blob, durationMs: number, afterId?: string): Promise<Entry | undefined> {
+    const found = this.entries.get(entryId);
+    if (!found) return undefined;
+    const entry = structuredClone(found);
+    const mime = audioType(blob.type) ?? 'audio/webm';
+    const id = newId();
+    await this.db.putAudio({ id, entryId, bytes: await blob.arrayBuffer(), mime });
+    await this.queue.enqueue({ kind: 'audio', audioId: id });
+    this.pendingKeys.set(`audio:${id}`, undefined);
+    const el: EntryElement = { id: newId(), type: 'audio', audioId: id, mime, durationMs: Math.round(durationMs), recordedAt: new Date().toISOString() };
+    const at = afterId ? entry.elements.findIndex((x) => x.id === afterId) : -1;
+    if (at >= 0) entry.elements.splice(at + 1, 0, el);
+    else entry.elements.push(el);
+    return this.saveEntry(entry);
+  }
+
+  /** URL para escuchar una nota de voz: la del teléfono si está, si no la del servidor. */
+  async audioUrl(id: string): Promise<string> {
+    const cached = this.photoUrls.get(`audio:${id}`);
+    if (cached) return cached;
+    const a = await this.db.getStoredAudio(id);
+    if (!a) return this.api.audioUrl(id);
+    const url = URL.createObjectURL(new Blob([a.bytes], { type: a.mime }));
+    this.photoUrls.set(`audio:${id}`, url);
+    return url;
   }
 
   // --- cierre ------------------------------------------------------------------------

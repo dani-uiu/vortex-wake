@@ -19,8 +19,12 @@
 
 import {
   ALLIANCE_LABELS,
+  CONTROLLER_SLOTS,
+  DEVICE_MAP_LABELS,
   MATCH_RESULT_LABELS,
+  PORT_SLOTS,
   cleanSlots,
+  slotLabel,
   initialsOf,
   slugify,
   type MatchElement,
@@ -469,6 +473,14 @@ function elementText(el: EntryElement): string {
       return el.title?.trim() ? `${el.title.trim()}: ${el.url.trim()}` : el.url.trim();
     case 'list':
       return el.items.filter((i) => i.trim()).map((i) => `• ${i.trim()}`).join('\n');
+    case 'audio':
+      // El audio no cabe en la bitácora: solo lo que se escribió de él.
+      return el.caption?.trim() ?? '';
+    case 'devicemap': {
+      const order = el.kind === 'ports' ? PORT_SLOTS : CONTROLLER_SLOTS.map(([s]) => s);
+      const lines = order.filter((s) => el.slots[s]?.trim()).map((s) => `${slotLabel(el.kind, s)}: ${el.slots[s]?.trim()}`);
+      return lines.length > 0 ? [`${DEVICE_MAP_LABELS[el.kind]}:`, ...lines].join('\n') : '';
+    }
     default:
       return '';
   }

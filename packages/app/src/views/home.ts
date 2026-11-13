@@ -3,7 +3,8 @@ import type { App } from '../app.ts';
 import { BUILD_LABEL } from '../pwa.ts';
 import { dateLabel, h, icon, openSheet, setChildren, toast } from '../ui.ts';
 import { entryCard, photoButton, syncBadge } from './common.ts';
-import { dictationFor } from '../dictation.ts';
+import { dictationFor, micMode, micModeChoice, openMicSettings } from '../dictation.ts';
+import { canRecord, openRecorder } from '../voice.ts';
 import { openSketch } from './sketch.ts';
 import { openAddTask, tasksBlock } from './tasks.ts';
 
@@ -27,8 +28,12 @@ export function newElement(type: EntryElement['type']): EntryElement {
       return { id, type, match: '' };
     case 'route':
       return { id, type, points: [] };
+    case 'devicemap':
+      return { id, type, kind: 'ports', slots: {} };
     case 'photo':
       throw new Error('las fotos se agregan con la cámara');
+    case 'audio':
+      throw new Error('las notas de voz se agregan con el micrófono');
   }
 }
 
@@ -58,6 +63,13 @@ export function renderHome(root: HTMLElement, app: App, go: (hash: string) => vo
       (e: Error) => toast(`No se pudo guardar: ${e.message}`),
     );
 
+  /** Nota de voz desde el inicio: queda en una entrada nueva. */
+  const saveVoice = async (blob: Blob, ms: number) => {
+    const e = await app.saveEntry(app.newEntry());
+    const saved = await app.addAudio(e.id, blob, ms);
+    toast('Nota de voz guardada', saved ? { label: 'Abrir', testid: 'toast-open-voice', run: () => go(`#/entrada/${saved.id}`) } : undefined);
+  };
+
   const openMore = () => {
     const sheet = openSheet('Agregar otra cosa', 'sheet-more');
     const item = (testid: string, ic: Parameters<typeof icon>[0], label: string, type: EntryElement['type']) =>
@@ -68,6 +80,9 @@ export function renderHome(root: HTMLElement, app: App, go: (hash: string) => vo
         { class: 'sheet-list' },
         photoButton('Fotos de la galería', { camera: false, cls: 'sheet-item', testid: 'gallery-input', onFiles: (files) => (sheet.close(), savePhotos(files)) }),
         h('button', { class: 'sheet-item', type: 'button', 'data-testid': 'new-sketch', onclick: () => (sheet.close(), openSketch((file) => app.addPhotos([file], undefined, { sketch: true, kind: 'brainstorm' }).then((saved) => toast('Boceto guardado', saved ? { label: 'Abrir', testid: 'toast-open-sketch', run: () => go(`#/entrada/${saved.id}`) } : undefined)))) }, icon('sketch'), h('span', { text: 'Boceto con el dedo' })),
+        canRecord()
+          ? h('button', { class: 'sheet-item', type: 'button', 'data-testid': 'new-voice', onclick: () => (sheet.close(), openRecorder((blob, ms) => void saveVoice(blob, ms))) }, icon('mic'), h('span', { text: 'Nota de voz' }))
+          : null,
         item('new-trials', 'trials', 'Prueba (aciertos y fallos)', 'trials'),
         item('new-link', 'link', 'Enlace', 'link'),
         item('new-list', 'list', 'Lista', 'list'),
@@ -81,11 +96,11 @@ export function renderHome(root: HTMLElement, app: App, go: (hash: string) => vo
   const actions = h(
     'section',
     { class: 'capture', 'aria-label': 'Capturar' },
-    photoButton('Foto', { camera: true, cls: 'btn-photo', testid: 'photo-input', onFiles: savePhotos }),
+    h('button', { class: 'btn-main', type: 'button', 'data-testid': 'new-text', onclick: () => void create('text') }, icon('text'), h('span', { text: 'Nota' })),
     h(
       'div',
       { class: 'quick' },
-      h('button', { class: 'btn-quick', type: 'button', 'data-testid': 'new-text', onclick: () => void create('text') }, icon('text'), h('span', { text: 'Nota' })),
+      photoButton('Foto', { camera: true, cls: 'btn-quick', testid: 'photo-input', onFiles: savePhotos }),
       h('button', { class: 'btn-quick', type: 'button', 'data-testid': 'more-actions', 'aria-haspopup': 'dialog', onclick: openMore }, icon('more'), h('span', { text: 'Más' })),
     ),
   );
@@ -95,8 +110,17 @@ export function renderHome(root: HTMLElement, app: App, go: (hash: string) => vo
     { class: 'home-footer' },
     h('button', { class: 'btn secondary', type: 'button', onclick: () => go('#/cierre') }, 'Cerrar la sesión del día'),
     app.access === 'edit' ? h('a', { class: 'link-muted', href: '#/escritorio' }, 'Vista de computadora') : null,
+    micModeChoice() ? micLink() : null,
     h('span', { class: 'muted small', 'data-testid': 'build', text: `Versión ${BUILD_LABEL}` }),
   );
+
+  function micLink(): HTMLElement {
+    const b = h('button', { class: 'link-muted', type: 'button', 'data-testid': 'mic-settings' });
+    const label = () => b.replaceChildren(icon('mic', 'icon sm'), `Micrófono: ${micMode() === 'record' ? 'solo grabar' : 'transcribir'}`);
+    b.addEventListener('click', () => openMicSettings(label));
+    label();
+    return b;
+  }
 
   const banner = h('div', { class: 'sync-slot' });
   const tasksSlot = h('div', { class: 'tasks-slot' });
@@ -159,7 +183,7 @@ export function renderHome(root: HTMLElement, app: App, go: (hash: string) => vo
     list.replaceChildren(
       ...(shown.length > 0
         ? shown.map((e) => entryCard(app, e, (id) => go(`#/entrada/${id}`), 'phone'))
-        : [h('p', { class: 'empty muted', text: filter === 'all' ? 'Todavía no hay nada hoy. Toma una foto: con un toque queda guardada.' : 'Nada por aquí.' })]),
+        : [h('p', { class: 'empty muted', text: filter === 'all' ? 'Todavía no hay nada hoy. Escribe una nota o toma una foto.' : 'Nada por aquí.' })]),
     );
   };
   render();

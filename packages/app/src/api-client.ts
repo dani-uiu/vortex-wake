@@ -75,6 +75,9 @@ export class ApiClient implements Transport {
   async putPhoto(id: string, bytes: Uint8Array): Promise<void> {
     await this.req(apiPath.photo(id), { method: 'PUT', body: bytes as BodyInit, headers: { 'content-type': 'image/jpeg' } }, PHOTO_TIMEOUT_MS);
   }
+  async putAudio(id: string, bytes: Uint8Array, mime: string): Promise<void> {
+    await this.req(apiPath.audio(id), { method: 'PUT', body: bytes as BodyInit, headers: { 'content-type': mime } }, PHOTO_TIMEOUT_MS);
+  }
   async attend(date: string, a: Attendance): Promise<void> {
     await this.json(apiPath.attendance(date), 'POST', a);
   }
@@ -92,6 +95,9 @@ export class ApiClient implements Transport {
   }
   photoUrl(id: string): string {
     return `${this.base}${apiPath.photo(id)}?${TEAM_KEY_QUERY}=${encodeURIComponent(this.key)}`;
+  }
+  audioUrl(id: string): string {
+    return `${this.base}${apiPath.audio(id)}?${TEAM_KEY_QUERY}=${encodeURIComponent(this.key)}`;
   }
   async template(): Promise<Uint8Array> {
     const res = await this.req(apiPath.template(), {}, 60_000);

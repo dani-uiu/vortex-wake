@@ -6,6 +6,7 @@
  *   data/sessions/AAAA-MM-DD.json
  *   data/entries/<id>.json
  *   data/photos/<id>.jpg
+ *   data/audio/<id>.webm|ogg|m4a…  notas de voz
  *   data/tasks/<id>.json        pendientes entre sesiones
  *
  * Todo se carga en memoria al arrancar y se escribe al instante (archivo
@@ -17,6 +18,7 @@
 import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
+  AUDIO_TYPES,
   emptySession,
   mergeAttendance,
   mergeClosing,
@@ -42,7 +44,7 @@ export class FileStore {
   constructor(dir: string, exampleTeamPath: string) {
     this.dir = dir;
     this.exampleTeam = exampleTeamPath;
-    for (const sub of ['', 'sessions', 'entries', 'photos', 'tasks']) mkdirSync(join(dir, sub), { recursive: true });
+    for (const sub of ['', 'sessions', 'entries', 'photos', 'audio', 'tasks']) mkdirSync(join(dir, sub), { recursive: true });
     const teamPath = join(dir, 'team.json');
     this.teamFromExample = !existsSync(teamPath);
     this.team = JSON.parse(readFileSync(this.teamFromExample ? this.exampleTeam : teamPath, 'utf8')) as TeamConfig;
@@ -130,6 +132,22 @@ export class FileStore {
 
   photoPath(id: string): string {
     return join(this.dir, 'photos', `${id}.jpg`);
+  }
+
+  /** Archivo de una nota de voz (`data/audio/<id>.<ext>`), si existe. */
+  audioFile(id: string): { path: string; type: string } | undefined {
+    for (const [type, ext] of Object.entries(AUDIO_TYPES)) {
+      const path = join(this.dir, 'audio', `${id}.${ext}`);
+      if (existsSync(path)) return { path, type };
+    }
+    return undefined;
+  }
+
+  /** Las notas de voz tampoco cambian. */
+  putAudio(id: string, bytes: Uint8Array, type: string): boolean {
+    if (this.audioFile(id)) return false;
+    writeAtomic(join(this.dir, 'audio', `${id}.${AUDIO_TYPES[type] ?? 'bin'}`), bytes);
+    return true;
   }
 
   /** Las fotos no cambian: si ya existe, no se reescribe. */

@@ -21,6 +21,42 @@ export interface PhotoStore {
   get(id: string): Promise<StoredPhotoBody | null>;
 }
 
+export interface StoredAudioBody extends StoredPhotoBody {
+  type: string;
+}
+
+/** Notas de voz: como las fotos, pero con su tipo de audio. */
+export interface AudioStore {
+  has(id: string): Promise<boolean>;
+  put(id: string, bytes: Uint8Array, type: string): Promise<void>;
+  get(id: string): Promise<StoredAudioBody | null>;
+}
+
+export class R2AudioStore implements AudioStore {
+  private readonly bucket: R2Bucket;
+
+  constructor(bucket: R2Bucket) {
+    this.bucket = bucket;
+  }
+
+  private key(id: string): string {
+    return `audio/${id}`;
+  }
+
+  async has(id: string): Promise<boolean> {
+    return (await this.bucket.head(this.key(id))) !== null;
+  }
+
+  async put(id: string, bytes: Uint8Array, type: string): Promise<void> {
+    await this.bucket.put(this.key(id), bytes, { httpMetadata: { contentType: type } });
+  }
+
+  async get(id: string): Promise<StoredAudioBody | null> {
+    const obj = await this.bucket.get(this.key(id));
+    return obj ? { body: obj.body, size: obj.size, type: obj.httpMetadata?.contentType ?? 'audio/webm' } : null;
+  }
+}
+
 export class R2PhotoStore implements PhotoStore {
   private readonly bucket: R2Bucket;
 

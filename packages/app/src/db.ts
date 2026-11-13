@@ -5,7 +5,7 @@
  * - photos:   fotos (bytes como ArrayBuffer, no Blob: más compatible con Safari)
  * - outbox:   cola de pendientes (sync-queue.ts)
  * - sessions: sesiones del día (asistencia y cierre)
- * - kv:       equipo y otros datos sueltos
+ * - kv:       equipo, pendientes (`task:<id>`), notas de voz (`audio:<id>`) y otros datos sueltos
  *
  * Cada escritura es su propia transacción y se espera a que termine
  * (`oncomplete`) antes de dar por guardado algo.
@@ -26,6 +26,14 @@ export interface StoredPhoto {
   height?: number;
   /** No se pudo reducir (formato que el navegador no lee). */
   error?: string;
+}
+
+/** Nota de voz grabada en este teléfono (va en `kv` para no cambiar la versión de IndexedDB). */
+export interface StoredAudio {
+  id: string;
+  entryId: string;
+  bytes: ArrayBuffer;
+  mime: string;
 }
 
 type StoreName = 'entries' | 'photos' | 'outbox' | 'sessions' | 'kv';
@@ -176,6 +184,18 @@ export class LocalDb implements QueueStore {
   async allTasks(): Promise<TaskItem[]> {
     const rows = await this.all<{ k: string; v: unknown }>('kv');
     return rows.filter((r) => r.k.startsWith('task:')).map((r) => r.v as TaskItem);
+  }
+
+  // --- notas de voz
+  getStoredAudio(id: string) {
+    return this.getKv<StoredAudio>(`audio:${id}`);
+  }
+  putAudio(a: StoredAudio) {
+    return this.setKv(`audio:${a.id}`, a);
+  }
+  async getAudio(id: string): Promise<{ bytes: Uint8Array; mime: string } | null> {
+    const a = await this.getStoredAudio(id);
+    return a ? { bytes: new Uint8Array(a.bytes), mime: a.mime } : null;
   }
 
   deleteEntryLocal(id: string) {

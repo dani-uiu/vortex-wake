@@ -15,6 +15,11 @@
  */
 
 import {
+  DEVICE_MAP_LABELS,
+  saveMapVersion,
+  slotLabel,
+  type DeviceMapElement,
+  type DeviceMapKind,
   ENTRY_KINDS,
   ENTRY_KIND_LABELS,
   ENTRY_MARKS,
@@ -35,9 +40,11 @@ import { autosize, debounce, h, icon, openSheet, setChildren, timeOf, toast } fr
 import { openAnnotator } from './annotate.ts';
 import { fieldView, openRouteEditor } from './route.ts';
 import { openSketch } from './sketch.ts';
+import { deviceView, openDeviceMapEditor, slotsFor } from './devicemap.ts';
 import { photoButton, statusPill } from './common.ts';
 import { newElement, newMatch } from './home.ts';
 import { dictationFor } from '../dictation.ts';
+import { canRecord, durationLabel, openRecorder } from '../voice.ts';
 import { annotationsToMarks, markedImage } from './marks.ts';
 
 const SECTIONS: SectionId[] = ['mechanics', 'coding', 'wiring', 'strategy'];
@@ -127,7 +134,12 @@ export function renderEditor(root: HTMLElement, app: App, id: string, onDone: ()
         { class: 'sheet-list' },
         photoButton(desk ? 'Foto (cámara)' : 'Tomar foto', { camera: true, cls: 'sheet-item', testid: 'editor-photo', onFiles: (f) => (sheet.close(), void addPhotos(f)) }),
         photoButton(desk ? 'Fotos de la computadora' : 'Fotos de la galería', { camera: false, cls: 'sheet-item', onFiles: (f) => (sheet.close(), void addPhotos(f)) }),
+        canRecord()
+          ? h('button', { class: 'sheet-item', type: 'button', 'data-add': 'audio', onclick: () => (sheet.close(), openRecorder((blob, ms) => void addAudio(blob, ms))) }, icon('mic'), h('span', { text: 'Nota de voz' }))
+          : null,
         h('button', { class: 'sheet-item', type: 'button', 'data-add': 'route', onclick: () => (sheet.close(), addRoute()) }, icon('route'), h('span', { text: 'Ruta del autónomo sobre el campo' })),
+        h('button', { class: 'sheet-item', type: 'button', 'data-add': 'ports', onclick: () => (sheet.close(), addDeviceMap('ports')) }, icon('brain'), h('span', { text: 'Mapa de puertos del Brain' })),
+        h('button', { class: 'sheet-item', type: 'button', 'data-add': 'controller', onclick: () => (sheet.close(), addDeviceMap('controller')) }, icon('gamepad'), h('span', { text: 'Mapa del control' })),
         h('button', { class: 'sheet-item', type: 'button', 'data-add': 'sketch', onclick: () => (sheet.close(), openSketch((file) => addPhotos([file], true))) }, icon('sketch'), h('span', { text: 'Boceto con el dedo' })),
         ...addKinds.map(([t, label]) =>
           h('button', { class: 'sheet-item', type: 'button', 'data-add': t, onclick: () => (sheet.close(), addElement(t)) }, icon(t), h('span', { text: label })),
@@ -189,7 +201,19 @@ export function renderEditor(root: HTMLElement, app: App, id: string, onDone: ()
     renderElements();
   }
 
-  function addElement(type: Exclude<EntryElement['type'], 'photo'>) {
+  /** Nota de voz grabada: va después del elemento `afterId` (el campo donde se tocó el micrófono). */
+  async function addAudio(blob: Blob, ms: number, afterId?: string) {
+    save.flush();
+    await saving;
+    const saved = await app.addAudio(entry.id, blob, ms, afterId);
+    if (saved) entry = structuredClone(saved);
+    renderElements();
+    toast('Nota de voz guardada');
+  }
+  /** Micrófono de un campo de texto: transcribe o graba (ver dictation.ts). */
+  const mic = (field: HTMLTextAreaElement, el: EntryElement) => dictationFor(field, { onRecorded: (blob, ms) => void addAudio(blob, ms, el.id) });
+
+  function addElement(type: Exclude<EntryElement['type'], 'photo' | 'audio' | 'devicemap'>) {
     entry.elements.push(newElement(type));
     saveNow();
     renderElements();
@@ -209,6 +233,55 @@ export function renderEditor(root: HTMLElement, app: App, id: string, onDone: ()
     renderElements();
     renderClass();
     openRoute(el);
+  }
+
+  /**
+   * Mapa del Brain o del control. Arranca con el mapa vigente del robot de la
+   * entrada (si tiene), para anotar solo lo que cambió. Va en Cableado si la
+   * entrada todavía no tiene sección.
+   */
+  function addDeviceMap(kind: DeviceMapKind) {
+    const robot = app.team?.robots.find((r) => r.id === entry.robotId);
+    const current = robot?.[kind]?.at(-1)?.slots ?? {};
+    const el: DeviceMapElement = { id: newId(), type: 'devicemap', kind, slots: { ...current } };
+    entry.elements.push(el);
+    if (!entry.section) entry.section = 'wiring';
+    saveNow();
+    renderElements();
+    renderClass();
+    openDeviceMap(el);
+  }
+
+  function openDeviceMap(el: DeviceMapElement) {
+    openDeviceMapEditor({
+      kind: el.kind,
+      slots: el.slots,
+      onChange: (slots) => {
+        const target = entry.elements.find((x) => x.id === el.id);
+        if (target && target.type === 'devicemap') target.slots = slots;
+        save();
+      },
+      onClose: () => {
+        save.flush();
+        renderElements();
+      },
+    });
+  }
+
+  /** Con la clave de edición: este mapa pasa a ser el vigente del robot (queda la versión de hoy). */
+  async function saveAsRobotMap(el: DeviceMapElement) {
+    const team = app.team;
+    const robotId = entry.robotId;
+    if (!team || !robotId) return;
+    const robots = team.robots.map((r) => (r.id === robotId ? { ...r, [el.kind]: saveMapVersion(r[el.kind], el.slots, app.today, new Date().toISOString(), app.me) } : r));
+    try {
+      app.team = await app.api.putTeam({ ...team, robots });
+      await app.db.setTeam(app.team);
+      toast(`${DEVICE_MAP_LABELS[el.kind]} del robot actualizado`);
+      app.emit();
+    } catch (e) {
+      toast(`No se pudo guardar (¿hay conexión?): ${(e as Error).message}`);
+    }
   }
 
   function removeElement(elId: string) {
@@ -284,7 +357,20 @@ export function renderEditor(root: HTMLElement, app: App, id: string, onDone: ()
         return shell(el, title, [pic, h('div', { class: 'row wrap' }, annotate), cap]);
       }
       case 'text':
-        return shell(el, 'Texto', [dictationFor(textArea(el.text, '¿Qué hicieron? ¿Qué vieron?', (v) => (el.text = v), 'text-input'))]);
+        return shell(el, 'Texto', [mic(textArea(el.text, '¿Qué hicieron? ¿Qué vieron?', (v) => (el.text = v), 'text-input'), el)]);
+      case 'audio': {
+        const player = h('audio', { controls: true, preload: 'metadata', class: 'voice', 'data-testid': 'voice-player' });
+        void app.audioUrl(el.audioId).then((u) => (player.src = u));
+        const cap = h('input', { type: 'text', placeholder: 'De qué trata (opcional; es lo que va a la bitácora)', value: el.caption ?? '', 'data-testid': 'voice-caption' });
+        cap.addEventListener('input', () => {
+          if (cap.value.trim()) el.caption = cap.value;
+          else delete el.caption;
+          save();
+        });
+        cap.addEventListener('blur', () => save.flush());
+        const title = ['Nota de voz', el.durationMs ? durationLabel(el.durationMs) : '', el.recordedAt ? timeOf(el.recordedAt) : ''].filter((x) => x).join(' · ');
+        return shell(el, title, [player, cap]);
+      }
       case 'link': {
         const url = h('input', { type: 'url', inputmode: 'url', placeholder: 'https://… (commit, foro, video)', value: el.url, autocomplete: 'off', 'data-testid': 'link-url' });
         const title = h('input', { type: 'text', placeholder: 'De qué es (opcional)', value: el.title ?? '' });
@@ -296,7 +382,7 @@ export function renderEditor(root: HTMLElement, app: App, id: string, onDone: ()
       }
       case 'list':
         return shell(el, 'Lista', [
-          dictationFor(textArea(el.items.join('\n'), 'Un elemento por renglón', (v) => (el.items = v.split('\n').map((s) => s.trimEnd()).filter((s, i, a) => s || i < a.length - 1)))),
+          mic(textArea(el.items.join('\n'), 'Un elemento por renglón', (v) => (el.items = v.split('\n').map((s) => s.trimEnd()).filter((s, i, a) => s || i < a.length - 1))), el),
         ]);
       case 'table':
         return shell(el, 'Tabla', [tableEditor(el)]);
@@ -304,6 +390,23 @@ export function renderEditor(root: HTMLElement, app: App, id: string, onDone: ()
         return shell(el, 'Prueba en vivo', [trialsEditor(el)]);
       case 'match':
         return shell(el, 'Partido de torneo', [matchEditor(el)]);
+      case 'devicemap': {
+        const view = deviceView(el.kind, el.slots);
+        const filled = slotsFor(el.kind).filter((s) => el.slots[s]?.trim());
+        const list = filled.length > 0
+          ? h('ul', { class: 'dm-summary' }, filled.map((s) => h('li', {}, h('strong', { text: `${slotLabel(el.kind, s)}: ` }), el.slots[s] ?? '')))
+          : h('p', { class: 'muted small', text: 'Todavía vacío.' });
+        const robot = app.team?.robots.find((r) => r.id === entry.robotId);
+        const actions = h(
+          'div',
+          { class: 'row wrap' },
+          h('button', { class: 'chip-btn', type: 'button', 'data-testid': 'edit-devicemap', onclick: () => openDeviceMap(el) }, icon('pen'), filled.length > 0 ? 'Editar el mapa' : 'Llenar el mapa'),
+          app.access === 'edit' && robot && filled.length > 0
+            ? h('button', { class: 'chip-btn', type: 'button', 'data-testid': 'devicemap-to-robot', onclick: () => void saveAsRobotMap(el) }, icon('check'), `Usar como mapa de ${robot.name}`)
+            : null,
+        );
+        return shell(el, DEVICE_MAP_LABELS[el.kind], [h('div', { class: 'device-wrap' }, view.el), actions, list]);
+      }
       case 'route': {
         const view = fieldView(el.points);
         const list = el.points.length > 0
@@ -354,11 +457,11 @@ export function renderEditor(root: HTMLElement, app: App, id: string, onDone: ()
       renderSegs();
     };
     const long = (key: 'failed' | 'adjusted', placeholder: string, label: string) =>
-      h('label', { class: 'q' }, h('span', { class: 'field-label', text: label }), dictationFor(textArea(el[key] ?? '', placeholder, (v) => {
+      h('label', { class: 'q' }, h('span', { class: 'field-label', text: label }), mic(textArea(el[key] ?? '', placeholder, (v) => {
         if (v.trim()) el[key] = v;
         else delete el[key];
         if (key === 'adjusted') renderSegs();
-      }, `match-${key}`)));
+      }, `match-${key}`), el));
     const segs = h('div', { class: 'stack-tight' });
     const seg = <T extends string>(label: string, options: [T, string][], current: T | undefined, set: (v: T | undefined) => void, testid: string) =>
       h(

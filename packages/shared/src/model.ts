@@ -239,12 +239,51 @@ export type EntryElement =
       sketch?: boolean;
     }
   | { id: string; type: 'text'; text: string }
+  | AudioElement
   | { id: string; type: 'link'; url: string; title?: string }
   | { id: string; type: 'list'; items: string[] }
   | { id: string; type: 'table'; header: string[]; rows: string[][] }
   | { id: string; type: 'trials'; trials: Trial[] }
   | MatchElement
-  | RouteElement;
+  | RouteElement
+  | DeviceMapElement;
+
+/**
+ * Mapa del Brain (puertos) o del control dibujado en una entrada, como la
+ * ruta del autónomo: qué va en cada puerto o botón. El mapa oficial del robot
+ * (`Robot.ports` / `Robot.controller`) se puede actualizar desde aquí.
+ */
+export interface DeviceMapElement {
+  id: string;
+  type: 'devicemap';
+  kind: DeviceMapKind;
+  /** Lugar (`PORT_SLOTS` o `CONTROLLER_SLOTS`) → qué hay ahí. */
+  slots: Record<string, string>;
+}
+
+/** Nombre de un lugar del mapa para mostrarlo: "Puerto 3", "Puerto A (3 hilos)", "Palanca izquierda ↕ (3)". */
+export function slotLabel(kind: DeviceMapKind, slot: string): string {
+  if (kind === 'ports') return /\d/.test(slot) ? `Puerto ${slot}` : `Puerto ${slot} (3 hilos)`;
+  return CONTROLLER_SLOTS.find(([s]) => s === slot)?.[1] ?? slot;
+}
+
+export const DEVICE_MAP_LABELS: Record<DeviceMapKind, string> = { ports: 'Mapa de puertos del Brain', controller: 'Mapa del control' };
+
+/**
+ * Nota de voz grabada en el teléfono (sin transcribir). El audio vive aparte
+ * (`/api/audio/:id`), como las fotos; en la bitácora solo aparece la nota escrita.
+ */
+export interface AudioElement {
+  id: string;
+  type: 'audio';
+  audioId: string;
+  /** Tipo del audio sin parámetros: `audio/webm`, `audio/ogg`, `audio/mp4`… */
+  mime: string;
+  durationMs?: number;
+  recordedAt?: IsoDateTime;
+  /** Lo que dice, en resumen (opcional; es lo que llega a la bitácora). */
+  caption?: string;
+}
 
 /** Un paso de la ruta del autónomo: un punto sobre el mapa del campo (0 a 1) y lo que pasa ahí. */
 export interface RoutePoint {

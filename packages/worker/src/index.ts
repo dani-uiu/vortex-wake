@@ -12,8 +12,10 @@ import {
   API_VERSION,
   ID_PATTERN,
   MAX_JSON_BYTES,
+  MAX_AUDIO_BYTES,
   MAX_PHOTO_BYTES,
   TEAM_KEY_HEADER,
+  audioType,
   TEAM_KEY_QUERY,
   RECENT_SESSION_DAYS,
   daysBefore,
@@ -35,7 +37,7 @@ import {
 } from '@vortex-wake/shared';
 import { accessFor, keysProblem } from './auth.ts';
 import { HttpError, json, readBody, readJson, withSecurityHeaders } from './http.ts';
-import { R2PhotoStore, type PhotoStore } from './photos.ts';
+import { R2AudioStore, R2PhotoStore, type PhotoStore } from './photos.ts';
 import { ConflictError, D1Store } from './store.ts';
 
 export interface Env {
@@ -112,7 +114,7 @@ async function api(req: Request, env: Env, url: URL): Promise<Response> {
   // La clave va en el encabezado; solo las fotos (que se piden desde <img>)
   // aceptan `?k=`. Sin clave válida, toda ruta de /api responde igual: no se
   // puede saber qué rutas existen ni si una clave "casi" coincide.
-  const fromQuery = method === 'GET' && /^\/api\/photos\/[^/]+$/.test(p) ? url.searchParams.get(TEAM_KEY_QUERY) : null;
+  const fromQuery = method === 'GET' && /^\/api\/(photos|audio)\/[^/]+$/.test(p) ? url.searchParams.get(TEAM_KEY_QUERY) : null;
   const access = await accessFor(req.headers.get(TEAM_KEY_HEADER) ?? fromQuery, env);
   if (!access) throw new HttpError(401, UNAUTHORIZED);
   const needEdit = () => {
@@ -173,6 +175,29 @@ async function api(req: Request, env: Env, url: URL): Promise<Response> {
       if (!photo) throw new HttpError(404, 'no existe esa foto');
       return new Response(photo.body, {
         headers: { 'content-type': 'image/jpeg', 'content-length': String(photo.size), 'cache-control': 'private, max-age=31536000, immutable' },
+      });
+    }
+  }
+
+  m = /^\/api\/audio\/([^/]+)$/.exec(p);
+  if (m) {
+    const id = safeDecode(m[1] as string);
+    if (!ID_PATTERN.test(id)) throw new HttpError(400, 'id de nota de voz inválido');
+    const audio = new R2AudioStore(env.PHOTOS);
+    if (method === 'PUT') {
+      const type = audioType(req.headers.get('content-type'));
+      if (!type) throw new HttpError(400, 'tipo de audio no aceptado');
+      const bytes = await readBody(req, MAX_AUDIO_BYTES);
+      if (bytes.length === 0) throw new HttpError(400, 'la nota de voz está vacía');
+      const created = !(await audio.has(id));
+      if (created) await audio.put(id, bytes, type);
+      return json(200, { id, bytes: bytes.length, created });
+    }
+    if (method === 'GET') {
+      const a = await audio.get(id);
+      if (!a) throw new HttpError(404, 'no existe esa nota de voz');
+      return new Response(a.body, {
+        headers: { 'content-type': a.type, 'content-length': String(a.size), 'cache-control': 'private, max-age=31536000, immutable' },
       });
     }
   }

@@ -10,7 +10,7 @@
  * - Nada se borra de la cola si el servidor no respondió que sí. Un error de
  *   red detiene la ronda y se reintenta pronto; un error del servidor se
  *   reintenta con espera creciente y queda visible (`lastError`).
- * - Las fotos van antes que las entradas que las usan.
+ * - Las fotos y notas de voz van antes que las entradas que las usan.
  *
  * No depende del navegador: el almacén y el transporte se inyectan (IndexedDB
  * y fetch en la app; versiones en memoria en las pruebas).
@@ -20,6 +20,7 @@ import type { Attendance, Entry, PutEntryResponse, PutTaskResponse, SessionClosi
 
 export type OpPayload =
   | { kind: 'photo'; photoId: string }
+  | { kind: 'audio'; audioId: string }
   | { kind: 'member'; memberId: string; name: string }
   | { kind: 'attendance'; date: string; attendance: Attendance }
   | { kind: 'entry'; entryId: string }
@@ -48,6 +49,8 @@ export interface QueueStore {
   /** Bytes JPEG ya reducidos; `undefined` si la foto todavía se está procesando. */
   /** `undefined`: todavía se está procesando; `null`: no está en este aparato (no hay nada que mandar). */
   getPhotoBytes(id: string): Promise<Uint8Array | undefined | null>;
+  /** Nota de voz guardada en este aparato; `null` si no está aquí. */
+  getAudio(id: string): Promise<{ bytes: Uint8Array; mime: string } | null>;
   getClosing(date: string): Promise<SessionClosing | undefined>;
   getTask(id: string): Promise<TaskItem | undefined>;
   /** El servidor tenía una versión más nueva del pendiente. */
@@ -68,6 +71,7 @@ export class NetworkError extends Error {}
 export interface Transport {
   putEntry(entry: Entry): Promise<PutEntryResponse>;
   putPhoto(id: string, bytes: Uint8Array): Promise<void>;
+  putAudio(id: string, bytes: Uint8Array, mime: string): Promise<void>;
   attend(date: string, a: Attendance): Promise<void>;
   closing(date: string, c: SessionClosing): Promise<void>;
   addMember(id: string, name: string): Promise<void>;
@@ -78,6 +82,8 @@ export function opKey(p: OpPayload): string {
   switch (p.kind) {
     case 'photo':
       return `photo:${p.photoId}`;
+    case 'audio':
+      return `audio:${p.audioId}`;
     case 'member':
       return `member:${p.memberId}`;
     case 'attendance':
@@ -91,7 +97,7 @@ export function opKey(p: OpPayload): string {
   }
 }
 
-const ORDER: Record<OpPayload['kind'], number> = { photo: 0, member: 1, attendance: 2, entry: 3, closing: 4, task: 5 };
+const ORDER: Record<OpPayload['kind'], number> = { photo: 0, audio: 0, member: 1, attendance: 2, entry: 3, closing: 4, task: 5 };
 
 export const RETRY_NETWORK_MS = 3000;
 export const RETRY_MAX_MS = 5 * 60_000;
@@ -208,6 +214,11 @@ export class SyncQueue {
         await this.transport.putPhoto(op.photoId, bytes);
         return true;
       }
+      case 'audio': {
+        const a = await this.store.getAudio(op.audioId);
+        if (a) await this.transport.putAudio(op.audioId, a.bytes, a.mime);
+        return true;
+      }
       case 'member':
         await this.transport.addMember(op.memberId, op.name);
         return true;
@@ -266,6 +277,10 @@ export class MemoryQueueStore implements QueueStore {
   }
   async getPhotoBytes(id: string) {
     return this.photos.get(id);
+  }
+  readonly audio = new Map<string, { bytes: Uint8Array; mime: string }>();
+  async getAudio(id: string) {
+    return this.audio.get(id) ?? null;
   }
   async getClosing(date: string) {
     return this.closings.get(date);

@@ -13,8 +13,10 @@ import {
   API_VERSION,
   ID_PATTERN,
   MAX_JSON_BYTES,
+  MAX_AUDIO_BYTES,
   MAX_PHOTO_BYTES,
   TEAM_KEY_HEADER,
+  audioType,
   TEAM_KEY_QUERY,
   RECENT_SESSION_DAYS,
   addMemberToTeam,
@@ -162,6 +164,25 @@ export function startServer(opts: ServerOptions): Promise<RunningServer> {
         const file = store.photoPath(id);
         if (!existsSync(file)) throw new HttpError(404, 'no existe esa foto');
         return sendFile(res, file, 'image/jpeg', 'private, max-age=31536000, immutable');
+      }
+    }
+
+    m = /^\/api\/audio\/([^/]+)$/.exec(p);
+    if (m) {
+      const id = decodeURIComponent(m[1] as string);
+      if (!ID_PATTERN.test(id)) throw new HttpError(400, 'id de nota de voz inválido');
+      if (method === 'PUT') {
+        const type = audioType(req.headers['content-type']);
+        if (!type) throw new HttpError(400, 'tipo de audio no aceptado');
+        const bytes = await readBody(req, MAX_AUDIO_BYTES);
+        if (bytes.length === 0) throw new HttpError(400, 'la nota de voz está vacía');
+        const created = store.putAudio(id, bytes, type);
+        return sendJson(res, 200, { id, bytes: bytes.length, created });
+      }
+      if (method === 'GET') {
+        const f = store.audioFile(id);
+        if (!f) throw new HttpError(404, 'no existe esa nota de voz');
+        return sendFile(res, f.path, f.type, 'private, max-age=31536000, immutable');
       }
     }
 

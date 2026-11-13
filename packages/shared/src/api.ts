@@ -16,6 +16,8 @@
  * - Asistencia: unión por integrante (se queda la hora de entrada más temprana).
  * - Cierre de sesión: gana el de `updatedAt` más reciente.
  * - Fotos: inmutables; `PUT` de una foto que ya existe responde 200 sin cambiarla.
+ * - Notas de voz: igual que las fotos (inmutables), con el tipo en
+ *   `content-type` (ver `AUDIO_TYPES`); el `GET` acepta `?k=` (se piden desde `<audio>`).
  *
  * Rutas:
  *
@@ -27,6 +29,8 @@
  * | PUT  /api/entries/:id                  | Entry             | PutEntryResponse    |
  * | PUT  /api/photos/:id                   | bytes JPEG        | PutPhotoResponse    |
  * | GET  /api/photos/:id                   | —                 | bytes JPEG          |
+ * | PUT  /api/audio/:id                    | bytes de audio    | PutPhotoResponse    |
+ * | GET  /api/audio/:id                    | —                 | bytes de audio      |
  * | POST /api/sessions/:date/attendance    | Attendance        | { session }         |
  * | PUT  /api/sessions/:date/closing       | SessionClosing    | { session, applied }|
  * | GET  /api/template                     | —                 | plantilla .pptx     |
@@ -48,6 +52,8 @@
  */
 
 import {
+  CONTROLLER_SLOTS,
+  PORT_SLOTS,
   ENTRY_KINDS,
   ENTRY_MARKS,
   MAX_ROUTE_POINTS,
@@ -69,6 +75,24 @@ export const TEAM_KEY_HEADER = 'x-team-key';
 export const TEAM_KEY_QUERY = 'k';
 /** Tamaño máximo de una foto ya reducida (las del teléfono pesan ~0.3-0.8 MB). */
 export const MAX_PHOTO_BYTES = 15 * 1024 * 1024;
+/** Tamaño máximo de una nota de voz (5 minutos en Opus pesan ~2-3 MB). */
+export const MAX_AUDIO_BYTES = 20 * 1024 * 1024;
+/** Duración máxima de una nota de voz (la grabación se detiene sola). */
+export const MAX_AUDIO_MS = 5 * 60_000;
+/** Tipos de audio aceptados y la extensión con la que se guardan. */
+export const AUDIO_TYPES: Record<string, string> = {
+  'audio/webm': 'webm',
+  'audio/ogg': 'ogg',
+  'audio/mp4': 'm4a',
+  'audio/mpeg': 'mp3',
+  'audio/aac': 'aac',
+  'audio/wav': 'wav',
+};
+/** `audio/webm;codecs=opus` → `audio/webm`; `undefined` si no es un tipo aceptado. */
+export function audioType(contentType: string | null | undefined): string | undefined {
+  const t = (contentType ?? '').split(';')[0]?.trim().toLowerCase() ?? '';
+  return t in AUDIO_TYPES ? t : undefined;
+}
 /** Tamaño máximo de un cuerpo JSON (una entrada, el equipo, una asistencia o un cierre). */
 export const MAX_JSON_BYTES = 1024 * 1024;
 
@@ -138,6 +162,7 @@ export const apiPath = {
   members: () => '/api/team/members',
   entry: (id: string) => `/api/entries/${encodeURIComponent(id)}`,
   photo: (id: string) => `/api/photos/${encodeURIComponent(id)}`,
+  audio: (id: string) => `/api/audio/${encodeURIComponent(id)}`,
   attendance: (date: string) => `/api/sessions/${date}/attendance`,
   closing: (date: string) => `/api/sessions/${date}/closing`,
   template: () => '/api/template',
@@ -252,6 +277,10 @@ function checkElement(el: unknown): string | undefined {
       return el.annotations === undefined ? undefined : checkAnnotations(el.annotations);
     case 'text':
       return isStr(el.text) ? undefined : 'texto inválido';
+    case 'audio':
+      if (!(isStr(el.audioId) && ID_PATTERN.test(el.audioId) && isStr(el.mime) && audioType(el.mime) === el.mime)) return 'nota de voz inválida';
+      if (el.durationMs !== undefined && !(typeof el.durationMs === 'number' && Number.isFinite(el.durationMs) && el.durationMs >= 0)) return 'nota de voz inválida';
+      return optStr(el.recordedAt) && optNote(el.caption) ? undefined : 'nota de voz inválida';
     case 'link':
       return isStr(el.url) && optStr(el.title) ? undefined : 'enlace inválido';
     case 'list':
@@ -268,6 +297,13 @@ function checkElement(el: unknown): string | undefined {
         if (!isObj(p) || !isStr(p.id) || !isUnit(p.x) || !isUnit(p.y) || !optNote(p.action) || !optNote(p.expected) || !optNote(p.points)) return 'punto de ruta inválido';
       }
       return undefined;
+    case 'devicemap': {
+      if (el.kind !== 'ports' && el.kind !== 'controller') return 'mapa inválido';
+      if (!isObj(el.slots)) return 'mapa inválido';
+      const valid = el.kind === 'ports' ? PORT_SLOTS : CONTROLLER_SLOTS.map(([s]) => s);
+      for (const [k, v] of Object.entries(el.slots)) if (!valid.includes(k) || !isStr(v) || v.length > MAX_NAME_LENGTH) return 'mapa inválido';
+      return undefined;
+    }
     case 'match': {
       const texts = [el.partner, el.opponents, el.ourScore, el.theirScore, el.failed, el.adjusted];
       if (!isStr(el.match) || el.match.length > MAX_NAME_LENGTH || !texts.every(optNote)) return 'partido inválido';
