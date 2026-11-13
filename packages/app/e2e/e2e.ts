@@ -603,11 +603,13 @@ try {
   await dd.click('[data-testid=editor-done]');
   await until('lo dictado llega al servidor', async () => (await liveEntries()).some((e) => e.elements.some((x) => x.type === 'text' && x.text === 'Hoy probamos el brazo nuevo')));
   await ctxDict.close();
-  // Sin reconocimiento de voz: no hay botón; se sugiere el micrófono del teclado.
+  // Sin reconocimiento de voz ni grabación (como por HTTP en la red local): no hay
+  // botón; se sugiere el micrófono del teclado.
   const ctxE = await browser.newContext(phone);
   await ctxE.addInitScript(() => {
     delete (window as unknown as { webkitSpeechRecognition?: unknown }).webkitSpeechRecognition;
     delete (window as unknown as { SpeechRecognition?: unknown }).SpeechRecognition;
+    delete (window as unknown as { MediaRecorder?: unknown }).MediaRecorder;
   });
   const ee = await ctxE.newPage();
   watch(ee, 'E');
