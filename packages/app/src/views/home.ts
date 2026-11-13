@@ -3,6 +3,7 @@ import type { App } from '../app.ts';
 import { BUILD_LABEL } from '../pwa.ts';
 import { dateLabel, h, icon, openSheet, setChildren, toast } from '../ui.ts';
 import { entryCard, photoButton, syncBadge } from './common.ts';
+import { dictationFor } from '../dictation.ts';
 import { openSketch } from './sketch.ts';
 import { openAddTask, tasksBlock } from './tasks.ts';
 
@@ -223,7 +224,7 @@ export function renderClosing(root: HTMLElement, app: App, go: (hash: string) =>
   const c = app.session(date).closing;
   const q = (label: string, value: string | undefined, testid: string) => {
     const t = h('textarea', { rows: '3', 'data-testid': testid, value: value ?? '' });
-    return { t, el: h('label', { class: 'q' }, h('span', { class: 'field-label', text: label }), t) };
+    return { t, el: h('label', { class: 'q' }, h('span', { class: 'field-label', text: label }), dictationFor(t)) };
   };
   const a = q(isToday ? '¿Qué hicimos hoy?' : '¿Qué hicimos?', c?.whatWeDid, 'closing-did');
   const b = q('¿Qué falló?', c?.whatFailed, 'closing-failed');

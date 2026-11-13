@@ -266,7 +266,7 @@ export function renderEditor(root: HTMLElement, app: App, id: string, onDone: ()
         return shell(el, title, [pic, h('div', { class: 'row wrap' }, annotate), cap]);
       }
       case 'text':
-        return shell(el, 'Texto', [textArea(el.text, '¿Qué hicieron? ¿Qué vieron?', (v) => (el.text = v), 'text-input')]);
+        return shell(el, 'Texto', [dictationFor(textArea(el.text, '¿Qué hicieron? ¿Qué vieron?', (v) => (el.text = v), 'text-input'))]);
       case 'link': {
         const url = h('input', { type: 'url', inputmode: 'url', placeholder: 'https://… (commit, foro, video)', value: el.url, autocomplete: 'off', 'data-testid': 'link-url' });
         const title = h('input', { type: 'text', placeholder: 'De qué es (opcional)', value: el.title ?? '' });
@@ -278,7 +278,7 @@ export function renderEditor(root: HTMLElement, app: App, id: string, onDone: ()
       }
       case 'list':
         return shell(el, 'Lista', [
-          textArea(el.items.join('\n'), 'Un elemento por renglón', (v) => (el.items = v.split('\n').map((s) => s.trimEnd()).filter((s, i, a) => s || i < a.length - 1))),
+          dictationFor(textArea(el.items.join('\n'), 'Un elemento por renglón', (v) => (el.items = v.split('\n').map((s) => s.trimEnd()).filter((s, i, a) => s || i < a.length - 1)))),
         ]);
       case 'table':
         return shell(el, 'Tabla', [tableEditor(el)]);

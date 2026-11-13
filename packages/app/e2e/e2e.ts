@@ -525,6 +525,71 @@ try {
   await ctxC.close();
   log('C (día siguiente): ve los pendientes que quedaron, pospone uno y agrega otro a mano');
 
+  // --- Dictado: con reconocimiento de voz (simulado) y sin él -------------------------------
+  const ctxDict = await browser.newContext(phone);
+  await ctxDict.addInitScript(() => {
+    class FakeRecognition {
+      lang = '';
+      continuous = false;
+      interimResults = false;
+      onresult: ((ev: unknown) => void) | null = null;
+      onerror: ((ev: unknown) => void) | null = null;
+      onend: (() => void) | null = null;
+      start() {
+        (window as unknown as { vwDictLang: string }).vwDictLang = this.lang;
+        const res = (t: string, isFinal: boolean) => ({ resultIndex: 0, results: { length: 1, 0: { isFinal, 0: { transcript: t } } } });
+        setTimeout(() => this.onresult?.(res('probamos el', false)), 150);
+        setTimeout(() => this.onresult?.(res('probamos el brazo nuevo', true)), 400);
+        setTimeout(() => this.onend?.(), 600);
+      }
+      stop() {
+        this.onend?.();
+      }
+    }
+    for (const name of ['SpeechRecognition', 'webkitSpeechRecognition']) Object.defineProperty(window, name, { value: FakeRecognition, configurable: true, writable: true });
+  });
+  const dd = await ctxDict.newPage();
+  watch(dd, 'D');
+  await dd.goto(backend.captureLink());
+  await dd.waitForSelector('[data-testid=who-select]');
+  await dd.selectOption('[data-testid=who-select]', 'carla');
+  await dd.click('[data-testid=who-enter]');
+  await dd.click('[data-testid=new-text]');
+  await dd.fill('[data-testid=text-input]', 'Hoy');
+  await dd.click('.el-text [data-testid=dictate]');
+  await dd.waitForSelector('[data-testid=sheet-dictation]');
+  assert(((await dd.textContent('[data-testid=sheet-dictation]')) ?? '').includes('servidores del fabricante'), 'la primera vez avisa a dónde va el audio');
+  assert((await dd.evaluate(() => (window as unknown as { vwDictLang?: string }).vwDictLang)) === undefined, 'no empieza a escuchar sin que la persona acepte');
+  await dd.waitForTimeout(400); // termina la animación de la hoja
+  await shotBoth(dd, '28-dictado-aviso', false);
+  await dd.click('[data-testid=dictation-accept]');
+  await until('el texto dictado aparece en el campo', async () => (await dd.inputValue('[data-testid=text-input]')) === 'Hoy probamos el brazo nuevo');
+  assert((await dd.evaluate(() => (window as unknown as { vwDictLang?: string }).vwDictLang)) === 'es-MX', 'dicta en español de México');
+  await dd.click('[data-testid=editor-done]');
+  await until('lo dictado llega al servidor', async () => (await liveEntries()).some((e) => e.elements.some((x) => x.type === 'text' && x.text === 'Hoy probamos el brazo nuevo')));
+  await ctxDict.close();
+  // Sin reconocimiento de voz: no hay botón; se sugiere el micrófono del teclado.
+  const ctxE = await browser.newContext(phone);
+  await ctxE.addInitScript(() => {
+    delete (window as unknown as { webkitSpeechRecognition?: unknown }).webkitSpeechRecognition;
+    delete (window as unknown as { SpeechRecognition?: unknown }).SpeechRecognition;
+  });
+  const ee = await ctxE.newPage();
+  watch(ee, 'E');
+  await ee.goto(backend.captureLink());
+  await ee.waitForSelector('[data-testid=who-select]');
+  await ee.selectOption('[data-testid=who-select]', 'carla');
+  await ee.click('[data-testid=who-enter]');
+  await ee.click('[data-testid=new-text]');
+  await ee.waitForSelector('[data-testid=text-input]');
+  assert((await ee.locator('[data-testid=dictate]').count()) === 0, 'sin reconocimiento de voz no hay botón de dictado');
+  assert(((await ee.getAttribute('[data-testid=text-input]', 'placeholder')) ?? '').includes('micrófono del teclado'), 'sugiere el micrófono del teclado');
+  await ee.fill('[data-testid=text-input]', 'Escrito con el teclado');
+  await ee.click('[data-testid=editor-done]');
+  await until('la nota sin dictado llega', async () => (await liveEntries()).some((e) => e.elements.some((x) => x.type === 'text' && x.text === 'Escrito con el teclado')));
+  await ctxE.close();
+  log('Dictado: aviso la primera vez, texto en vivo en es-MX que llega al servidor; sin reconocimiento, sugerencia del teclado');
+
   if (NUBE) {
     // Con la clave de captura no se entra a la vista de computadora ni al QR.
     await b.goto(`${base}/#/escritorio`);
