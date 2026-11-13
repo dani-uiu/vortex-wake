@@ -23,6 +23,7 @@ data/server.json               clave del equipo (se crea sola la primera vez)
 data/sessions/AAAA-MM-DD.json  asistencia y cierre de cada día
 data/entries/<id>.json         una micro-entrada por archivo
 data/photos/<id>.jpg           fotos ya reducidas (lado mayor 1600 px)
+data/tasks/<id>.json           pendientes entre sesiones (se crea sola)
 ```
 
 `data/` está en `.gitignore`: nunca se sube. Para respaldar, basta copiar la carpeta. Para agregar integrantes se puede editar `data/team.json` (con el servidor apagado) o usar "¿No estás en la lista?" en la app o el panel "Equipo" de la vista de computadora.
