@@ -52,6 +52,17 @@ export const ICONS = {
   more: svg('<circle cx="5" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="19" cy="12" r="1.5"/>'),
   repeat: svg('<path d="M17 2l3 3-3 3"/><path d="M4 11V9a4 4 0 0 1 4-4h12"/><path d="M7 22l-3-3 3-3"/><path d="M20 13v2a4 4 0 0 1-4 4H4"/>'),
   flag: svg('<path d="M5 21V4M5 4h11l-2 4 2 4H5"/>'),
+  pen: svg('<path d="M4 20l1-5L16 4l4 4L9 19z"/><path d="M14 6l4 4"/>'),
+  tag: svg('<circle cx="12" cy="12" r="8"/><path d="M9.5 15.5 12 8.5l2.5 7M10.3 13.3h3.4"/>'),
+  arrow: svg('<path d="M5 19 19 5"/><path d="M10 5h9v9"/>'),
+  mic: svg('<rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/>'),
+  stop: svg('<rect x="6" y="6" width="12" height="12" rx="2"/>'),
+  eraser: svg('<path d="M8 20h12"/><path d="M4.5 14.5 14 5l5 5-9.5 9.5H9z"/><path d="m9 10 5 5"/>'),
+  route: svg('<circle cx="6" cy="18" r="2.5"/><circle cx="18" cy="6" r="2.5"/><path d="M8 16.5c3-1 2-6 5-7.5s3.5-.5 3.5-.5"/>'),
+  trophy: svg('<path d="M8 4h8v5a4 4 0 0 1-8 0z"/><path d="M8 6H4a3 3 0 0 0 4 4M16 6h4a3 3 0 0 1-4 4M12 13v4M8 21h8M9 17h6"/>'),
+  todo: svg('<rect x="4" y="4" width="16" height="16" rx="3"/><path d="m8 12 3 3 5-6"/>'),
+  sketch: svg('<path d="M3 17c3-6 5 3 8-3s4-6 7-3"/><path d="M4 21h16"/>'),
+  clock: svg('<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/>'),
 };
 
 export function icon(name: keyof typeof ICONS, cls = 'icon'): HTMLSpanElement {
@@ -102,11 +113,11 @@ export const WIDE_QUERY = '(min-width: 900px)';
  * Con `anchor` y pantalla ancha se muestra como menú junto a ese botón (abajo
  * o, si no cabe, arriba), en vez de una hoja de celular estirada.
  */
-export function openSheet(title: string, testid: string, onClose?: () => void, anchor?: HTMLElement): Sheet {
+export function openSheet(title: string, testid: string, onClose?: () => void, anchor?: HTMLElement, opts: { full?: boolean } = {}): Sheet {
   hideToast();
   const body = h('div', { class: 'sheet-body' });
-  const dlg = h('dialog', { class: 'sheet', 'data-testid': testid, 'aria-label': title });
-  const pop = !!anchor && matchMedia(WIDE_QUERY).matches;
+  const dlg = h('dialog', { class: opts.full ? 'sheet full' : 'sheet', 'data-testid': testid, 'aria-label': title });
+  const pop = !opts.full && !!anchor && matchMedia(WIDE_QUERY).matches;
   let ro: ResizeObserver | undefined;
   if (pop && anchor) {
     dlg.classList.add('popover');

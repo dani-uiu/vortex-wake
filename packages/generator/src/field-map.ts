@@ -45,7 +45,20 @@ export interface PageTypeMapping {
    * blanco, copiando la etiqueta de sección, el título y las formas de los
    * campos de la página `donor` de la misma sección.
    */
-  base?: { donor: PageType; title: { es: string; en: string } };
+  base?: {
+    donor: PageType;
+    title: { es: string; en: string };
+    /**
+     * Varios campos apilados (con su encabezado, que se reescribe): cada uno
+     * ocupa `share` del alto disponible. Sin `stack`, un solo recuadro ocupa
+     * todo el alto.
+     */
+    stack?: { field: string; share: number; heading: { es: string; en: string } }[];
+    /** Encabezado de cada tabla, reescrito. */
+    tableHeaders?: Record<string, { es: string[]; en: string[] }>;
+    /** Ancho de cada columna (puntos). */
+    columnWidthsPt?: Record<string, number[]>;
+  };
 }
 
 export interface TocMapping {
@@ -67,6 +80,17 @@ export interface FixedPageMapping {
   toc?: TocMapping;
 }
 
+export interface RobotMapMapping {
+  section: TemplateSection;
+  /** Huella: todas las formas de la página. */
+  shapes: string[];
+  /** Lugar (puerto, botón) → forma. */
+  slots: Record<string, string>;
+  footer: { project: string; name: string; date: string; page: string };
+  titleBox: { x: number; y: number; w: number; h: number };
+  title: { es: string; en: string };
+}
+
 export type FixedPageId = 'cover' | 'coverPhoto' | 'resources' | 'tableOfContents';
 
 export interface FieldMap {
@@ -77,6 +101,10 @@ export interface FieldMap {
   standard: StandardDefaults;
   pageTypes: Record<PageType, PageTypeMapping>;
   fixedPages: Record<FixedPageId, FixedPageMapping>;
+  /** Páginas del mapa de puertos del Brain y del mapa del control (Cableado). */
+  robotMaps?: Record<'ports' | 'controller', RobotMapMapping>;
+  /** Imágenes que se toman de la plantilla (el mapa del campo). */
+  templateImages?: { field?: { section: TemplateSection; shapes: string[] } };
 }
 
 export const defaultFieldMap = raw as unknown as FieldMap;

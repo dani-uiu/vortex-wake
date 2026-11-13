@@ -11,7 +11,7 @@
  * (`oncomplete`) antes de dar por guardado algo.
  */
 
-import type { CaptureSession, Entry, SessionClosing, TeamConfig } from '@vortex-wake/shared';
+import type { CaptureSession, Entry, SessionClosing, TaskItem, TeamConfig } from '@vortex-wake/shared';
 import type { OutboxOp, QueueStore } from './sync-queue.ts';
 
 export interface StoredPhoto {
@@ -160,6 +160,22 @@ export class LocalDb implements QueueStore {
   }
   setTeam(t: TeamConfig) {
     return this.setKv('team', t);
+  }
+
+  // --- pendientes: en `kv` con la clave `task:<id>` (así no cambia la versión
+  // de IndexedDB, que bloquearía si hay otra pestaña abierta con la app vieja).
+  getTask(id: string) {
+    return this.getKv<TaskItem>(`task:${id}`);
+  }
+  putTask(t: TaskItem) {
+    return this.setKv(`task:${t.id}`, t);
+  }
+  acceptServerTask(t: TaskItem) {
+    return this.putTask(t);
+  }
+  async allTasks(): Promise<TaskItem[]> {
+    const rows = await this.all<{ k: string; v: unknown }>('kv');
+    return rows.filter((r) => r.k.startsWith('task:')).map((r) => r.v as TaskItem);
   }
 
   deleteEntryLocal(id: string) {

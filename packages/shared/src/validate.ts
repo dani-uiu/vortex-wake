@@ -11,6 +11,7 @@ import {
   NOTEBOOK_VERSION,
   PAGE_TYPES,
   SECTIONS,
+  TEMPLATE_FIELD_IMAGE,
   findPageRefs,
   type NotebookDocument,
   type PageType,
@@ -208,10 +209,12 @@ export function validateNotebook(input: unknown): ValidationResult {
       if (pg.changes !== undefined) {
         if (!Array.isArray(pg.changes)) add(`${p}.changes`, 'debe ser una lista');
         else if (spec.placement !== 'section') add(`${p}.changes`, 'solo las páginas de sección alimentan el registro de cambios');
-        else if (pg.section === 'strategy') add(`${p}.changes`, 'la plantilla no trae registro de cambios en Estrategia');
         else pg.changes.forEach((c, j) => {
           const cp = `${p}.changes[${j}]`;
           if (!isObject(c)) return add(cp, 'debe ser un objeto');
+          const logSections: readonly string[] = PAGE_TYPES.changeLog.sections;
+          if (c.section !== undefined && !logSections.includes(c.section as string)) add(`${cp}.section`, `debe ser una sección con registro de cambios (${logSections.join(', ')})`);
+          else if (c.section === undefined && !logSections.includes(pg.section as string)) add(`${p}.changes`, 'la plantilla no trae registro de cambios en Estrategia');
           if (c.date !== undefined && !isValidDate(c.date)) add(`${cp}.date`, 'fecha inválida (formato AAAA-MM-DD)');
           requireString(c, 'change', cp, add);
           optionalString(c, 'evidence', cp, add);
@@ -236,6 +239,20 @@ export function validateNotebook(input: unknown): ValidationResult {
           optionalString(c, 'changes', cp, add);
         });
       }
+    });
+  }
+
+  if (doc.robotMaps !== undefined) {
+    if (!Array.isArray(doc.robotMaps)) add('robotMaps', 'debe ser una lista');
+    else doc.robotMaps.forEach((m, i) => {
+      const p = `robotMaps[${i}]`;
+      if (!isObject(m)) return add(p, 'debe ser un objeto');
+      if (typeof m.id !== 'string' || !ID_RE.test(m.id) || pageIds.has(m.id)) add(`${p}.id`, 'id inválido o repetido');
+      if (m.kind !== 'ports' && m.kind !== 'controller') add(`${p}.kind`, 'debe ser "ports" o "controller"');
+      requireString(m, 'robot', p, add);
+      if (!isValidDate(m.date)) add(`${p}.date`, 'fecha inválida (formato AAAA-MM-DD)');
+      if (!Array.isArray(m.authors) || m.authors.some((a) => typeof a !== 'string' || !memberIds.has(a))) add(`${p}.authors`, 'integrantes desconocidos');
+      if (!isObject(m.slots) || Object.values(m.slots).some((v) => typeof v !== 'string')) add(`${p}.slots`, 'debe ser un objeto { lugar: texto }');
     });
   }
 
@@ -289,11 +306,26 @@ function validateArea(value: unknown, path: string, add: Add, collectRefs: (p: s
       const ip = `${path}.images[${i}]`;
       if (!isObject(img)) return add(ip, 'debe ser un objeto { src, caption }');
       if (typeof img.src !== 'string' || img.src.trim() === '') add(`${ip}.src`, 'falta la ruta de la imagen');
-      else if (!IMAGE_RE.test(img.src)) add(`${ip}.src`, 'solo se aceptan imágenes PNG o JPEG');
+      else if (img.src !== TEMPLATE_FIELD_IMAGE && !IMAGE_RE.test(img.src)) add(`${ip}.src`, 'solo se aceptan imágenes PNG o JPEG');
       optionalString(img, 'caption', ip, add);
       collectRefs(`${ip}.caption`, img.caption);
+      if (img.marks !== undefined) validateMarks(img.marks, `${ip}.marks`, add);
     });
   }
+}
+
+function validateMarks(value: unknown, path: string, add: Add) {
+  if (!Array.isArray(value)) return add(path, 'debe ser una lista');
+  const unit = (v: unknown) => typeof v === 'number' && Number.isFinite(v) && v >= 0 && v <= 1;
+  value.forEach((m, i) => {
+    const mp = `${path}[${i}]`;
+    if (!isObject(m)) return add(mp, 'debe ser un objeto { kind, x, y }');
+    if (m.kind !== 'label' && m.kind !== 'arrow') add(`${mp}.kind`, 'debe ser "label" o "arrow"');
+    if (!unit(m.x) || !unit(m.y)) add(mp, 'x e y deben ser números entre 0 y 1');
+    const hasTarget = m.tx !== undefined || m.ty !== undefined;
+    if ((m.kind === 'arrow' || hasTarget) && (!unit(m.tx) || !unit(m.ty))) add(mp, 'tx y ty deben ser números entre 0 y 1');
+    optionalString(m, 'text', mp, add);
+  });
 }
 
 function validateTable(

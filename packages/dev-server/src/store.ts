@@ -6,6 +6,7 @@
  *   data/sessions/AAAA-MM-DD.json
  *   data/entries/<id>.json
  *   data/photos/<id>.jpg
+ *   data/tasks/<id>.json        pendientes entre sesiones
  *
  * Todo se carga en memoria al arrancar y se escribe al instante (archivo
  * temporal + renombrar, para no dejar un JSON a medias si se apaga la laptop).
@@ -20,6 +21,8 @@ import {
   mergeAttendance,
   mergeClosing,
   mergeEntry,
+  mergeTask,
+  type TaskItem,
   type Attendance,
   type CaptureSession,
   type Entry,
@@ -39,7 +42,7 @@ export class FileStore {
   constructor(dir: string, exampleTeamPath: string) {
     this.dir = dir;
     this.exampleTeam = exampleTeamPath;
-    for (const sub of ['', 'sessions', 'entries', 'photos']) mkdirSync(join(dir, sub), { recursive: true });
+    for (const sub of ['', 'sessions', 'entries', 'photos', 'tasks']) mkdirSync(join(dir, sub), { recursive: true });
     const teamPath = join(dir, 'team.json');
     this.teamFromExample = !existsSync(teamPath);
     this.team = JSON.parse(readFileSync(this.teamFromExample ? this.exampleTeam : teamPath, 'utf8')) as TeamConfig;
@@ -51,6 +54,22 @@ export class FileStore {
       const e = readJson<Entry>(join(dir, 'entries', f));
       if (e) this.entries.set(e.id, e);
     }
+    for (const f of readdirSync(join(dir, 'tasks')).filter((n) => n.endsWith('.json'))) {
+      const t = readJson<TaskItem>(join(dir, 'tasks', f));
+      if (t) this.tasks.set(t.id, t);
+    }
+  }
+
+  readonly tasks = new Map<string, TaskItem>();
+
+  /** Pendientes: gana el más reciente (como las entradas). */
+  putTask(task: TaskItem): { applied: boolean; task: TaskItem } {
+    const r = mergeTask(this.tasks.get(task.id), task);
+    if (r.applied) {
+      this.tasks.set(task.id, task);
+      writeAtomic(join(this.dir, 'tasks', `${task.id}.json`), JSON.stringify(task, null, 2));
+    }
+    return r;
   }
 
   /** Clave del equipo: la de `data/server.json`, o una nueva. */

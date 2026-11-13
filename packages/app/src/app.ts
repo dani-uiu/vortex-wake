@@ -4,12 +4,19 @@
  */
 
 import {
+  closingNudge,
   emptySession,
+  later,
+  type ClosingNudge,
   localDate,
   mergeAttendance,
   mergeSessions,
   newId,
+  nextDay,
   slugify,
+  tasksFromClosing,
+  visibleTasks,
+  type TaskItem,
   type AccessLevel,
   type CaptureSession,
   type Entry,
@@ -30,6 +37,8 @@ const LS_AUTHORS = 'vw.lastAuthors';
 const LS_ACCESS = 'vw.access';
 /** Más el id de la persona: lo último que clasificó en este teléfono. */
 const LS_RECENT = 'vw.recent.';
+/** Más la fecha: "Ahora no" en el recordatorio de cierre de ese día (solo en este teléfono). */
+const LS_NUDGE = 'vw.nudge.';
 
 /** Clasificación recordada en el teléfono (solo para proponerla; no se guarda en el servidor). */
 export interface Classification {
@@ -112,6 +121,7 @@ export class App {
   me: string | undefined;
   readonly entries = new Map<string, Entry>();
   readonly sessions = new Map<string, CaptureSession>();
+  readonly tasks = new Map<string, TaskItem>();
   pendingKeys = new Map<string, string | undefined>();
   sync: SyncState = { online: undefined, pending: 0, unauthorized: false };
   /** Qué permite la clave de este teléfono (el servidor local no lo dice: permite todo). */
@@ -149,6 +159,7 @@ export class App {
     this.team = await this.db.getTeam();
     for (const e of await this.db.allEntries()) this.entries.set(e.id, e);
     for (const s of await this.db.allSessions()) this.sessions.set(s.date, s);
+    for (const t of await this.db.allTasks()) this.tasks.set(t.id, t);
     await this.refreshPending();
     await this.recoverPhotos();
     addEventListener('online', () => void this.tick(true));
@@ -218,7 +229,9 @@ export class App {
       this.hosted = s.hosted === true;
       lsSet(LS_ACCESS, this.access);
       lsSet(LS_HOSTED, this.hosted ? '1' : null);
-      await this.applyServerState(s.team, s.sessions, s.entries);
+      // Con ?date= también llegan las sesiones de los días anteriores (para el recordatorio de cierre).
+      await this.applyServerState(s.team, [...(s.recentSessions ?? []), ...s.sessions], s.entries);
+      await this.applyServerTasks(s.tasks ?? []);
     } catch (e) {
       if (e instanceof NetworkError) this.sync.online = false;
       else if (e instanceof HttpStatusError && e.status === 401) {
@@ -248,6 +261,84 @@ export class App {
         await this.db.putEntry(e);
       }
     }
+  }
+
+  private async applyServerTasks(tasks: TaskItem[]): Promise<void> {
+    for (const t of tasks) {
+      if (this.pendingKeys.has(`task:${t.id}`)) continue; // lo de aquí todavía no se manda
+      const local = this.tasks.get(t.id);
+      if (!local || t.updatedAt > local.updatedAt) {
+        this.tasks.set(t.id, t);
+        await this.db.putTask(t);
+      }
+    }
+  }
+
+  // --- recordatorio de cierre -----------------------------------------------------------
+
+  /** Sesión que quedó sin cierre (o la de hoy, si ya pasó un rato sin capturas). */
+  closingNudge(): ClosingNudge | undefined {
+    return closingNudge({
+      today: this.today,
+      now: Date.now(),
+      sessions: this.sessions.values(),
+      entries: this.entries.values(),
+      dismissed: (d) => lsGet(LS_NUDGE + d) === '1',
+    });
+  }
+
+  dismissNudge(date: string): void {
+    lsSet(LS_NUDGE + date, '1');
+    this.emit();
+  }
+
+  // --- pendientes ---------------------------------------------------------------------
+
+  /** Pendientes que se ven hoy (de cierres anteriores, a mano, sin pospuestos). */
+  visibleTasks(date = this.today): TaskItem[] {
+    return visibleTasks(this.tasks.values(), date, (iso) => localDate(new Date(iso)));
+  }
+
+  /** Guarda en el teléfono y anota el envío (como las entradas). */
+  async saveTask(task: TaskItem, emit = true): Promise<TaskItem> {
+    const prev = this.tasks.get(task.id);
+    const saved: TaskItem = { ...task, updatedAt: prev ? later(new Date().toISOString(), prev.updatedAt) : task.updatedAt };
+    await this.db.putTask(saved);
+    this.tasks.set(saved.id, saved);
+    await this.queue.enqueue({ kind: 'task', taskId: saved.id });
+    this.pendingKeys.set(`task:${saved.id}`, undefined);
+    if (emit) {
+      this.emit();
+      void this.flush();
+    }
+    return saved;
+  }
+
+  async addTask(text: string): Promise<TaskItem> {
+    const now = new Date().toISOString();
+    const t: TaskItem = { id: `m-${newId()}`, text: text.trim(), fromDate: this.today, source: 'manual', createdAt: now, updatedAt: now };
+    if (this.me) t.createdBy = this.me;
+    return this.saveTask(t);
+  }
+
+  async setTaskDone(id: string, done: boolean): Promise<void> {
+    const t = this.tasks.get(id);
+    if (!t) return;
+    const next = { ...t };
+    if (done) next.done = { at: new Date().toISOString(), ...(this.me ? { by: this.me } : {}) };
+    else delete next.done;
+    await this.saveTask(next);
+  }
+
+  /** Pospone hasta la siguiente sesión (cualquier día después de hoy). */
+  async snoozeTask(id: string): Promise<void> {
+    const t = this.tasks.get(id);
+    if (t) await this.saveTask({ ...t, snoozedUntil: nextDay(this.today) });
+  }
+
+  async dropTask(id: string): Promise<void> {
+    const t = this.tasks.get(id);
+    if (t) await this.saveTask({ ...t, deleted: true });
   }
 
   entryStatus(e: Entry): EntryStatus {
@@ -408,10 +499,11 @@ export class App {
    * Foto primero: guarda el original en el teléfono y la entrada (nueva o
    * existente) en ese mismo momento; después reduce la foto en segundo plano.
    */
-  async addPhotos(files: File[], entryId?: string): Promise<Entry | undefined> {
+  async addPhotos(files: File[], entryId?: string, opts: { sketch?: boolean; kind?: EntryKind } = {}): Promise<Entry | undefined> {
     if (files.length === 0) return undefined;
     let entry = entryId ? this.entries.get(entryId) : undefined;
     entry = entry ? structuredClone(entry) : this.newEntry();
+    if (opts.kind && !entry.kind) entry.kind = opts.kind;
     const toProcess: StoredPhoto[] = [];
     for (const file of files) {
       const bytes = await file.arrayBuffer();
@@ -423,7 +515,7 @@ export class App {
       // aquí, al abrir se recupera la entrada a partir de la foto.
       await this.queue.enqueue({ kind: 'photo', photoId: id });
       this.pendingKeys.set(`photo:${id}`, undefined);
-      entry.elements.push({ id: newId(), type: 'photo', photoId: id, takenAt });
+      entry.elements.push({ id: newId(), type: 'photo', photoId: id, takenAt, ...(opts.sketch ? { sketch: true } : {}) });
       toProcess.push(photo);
     }
     const saved = await this.saveEntry(entry);
@@ -494,6 +586,8 @@ export class App {
     this.sessions.set(date, s);
     await this.db.putSession(s);
     await this.queue.enqueue({ kind: 'closing', date });
+    // Cada renglón de "¿Qué sigue?" es un pendiente para la siguiente sesión.
+    for (const t of tasksFromClosing(date, closing.whatsNext, this.tasks.values(), closing.updatedAt, this.me)) await this.saveTask(t, false);
     this.emit();
     void this.flush();
   }

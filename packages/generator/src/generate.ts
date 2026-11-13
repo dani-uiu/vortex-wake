@@ -4,10 +4,11 @@
  * Node y en el navegador.
  */
 
-import { parseNotebook, replacePageRefs, type ImageRef, type NotebookDocument } from '@vortex-wake/shared';
+import { FIELD_IMAGE, TEMPLATE_FIELD_IMAGE, parseNotebook, replacePageRefs, type ImageRef, type NotebookDocument } from '@vortex-wake/shared';
 import { defaultFieldMap, type FieldMap, type FixedPageId } from './field-map.ts';
 import { LABELS, formatDate } from './format.ts';
 import { readImageInfo } from './images.ts';
+import { missingCalendarMonths, renderCalendar, renderRobotMap } from './maps-render.ts';
 import { layoutPage, readModelGeometry, type PageLayout } from './layout.ts';
 import { textWidthPt, wrapText } from './measure.ts';
 import { CONTENT_TYPES, REL_TYPES, nextRelId, relativeTarget, relsPathFor, resolveTarget, type OpcPackage, type Relationship } from './opc.ts';
@@ -27,6 +28,8 @@ export interface GenerateOptions {
   includeResources?: boolean;
   /** Conserva el texto de ayuda gris bajo cada encabezado (por defecto se quita). */
   keepHelpText?: boolean;
+  /** Calendarios mensuales con las sesiones (por defecto sí, en los meses que trae la plantilla). */
+  includeCalendars?: boolean;
   /** Prefijos de la numeración por sección. */
   prefixes?: Partial<Record<NumberGroup, string>>;
   fieldMap?: FieldMap;
@@ -97,7 +100,7 @@ export async function generateNotebook(params: {
   const lang = doc.language;
 
   // 1. Imágenes: se cargan todas antes de acomodar.
-  const images = await loadImages(doc, params.loadAsset);
+  const images = await loadImages(doc, params.loadAsset, () => fieldImage(template));
   const lookup = (src: string): ResolvedImage => {
     const img = images.get(src);
     if (!img) throw new Error(`imagen no cargada: ${src}`);
@@ -105,17 +108,20 @@ export async function generateNotebook(params: {
   };
 
   // 2. Páginas lógicas.
+  const calendarSlides = opts.includeCalendars === false ? [] : template.calendarSlides();
   const logical = planNotebook(doc, lookup, {
     includeResources: opts.includeResources ?? true,
     includeReferencePages: opts.includeReferencePages ?? false,
     referenceSlides: template.sectionSlides('reference'),
+    calendarSlides,
   });
+  if (opts.includeCalendars !== false) warnings.push(...missingCalendarMonths(doc, calendarSlides));
 
   // 3. Páginas físicas (con continuaciones).
   const style = map.standard;
   const bottomLimit = map.contentBottomPt;
   const physical: PhysicalPage[] = [];
-  const titleCache = new Map<number, string>();
+  const titleCache = new Map<string, string>();
   for (const lp of logical) {
     switch (lp.kind) {
       case 'cover':
@@ -133,13 +139,22 @@ export async function generateNotebook(params: {
       case 'asIs':
         physical.push({ logical: lp, model: lp.slide, group: lp.group });
         break;
+      case 'robotMap': {
+        const spec = map.robotMaps?.[lp.map.kind];
+        physical.push({ logical: lp, model: template.robotMapSlide(lp.map.kind), group: lp.group, title: `${spec?.title[lang] ?? ''}: ${lp.map.robot}` });
+        break;
+      }
+      case 'calendar':
+        physical.push({ logical: lp, model: lp.slide, group: lp.group, title: lp.title });
+        break;
       case 'content': {
         const model = template.modelFor(lp.type, lp.section, lang);
         const mapping = map.pageTypes[lp.type];
         const slideDoc = template.pkg.getXml(model.part);
         const geom = readModelGeometry(slideDoc.documentElement as unknown as Element, mapping.fields, bottomLimit);
-        if (!titleCache.has(model.index)) titleCache.set(model.index, readTitle(slideDoc.documentElement as unknown as Element, map));
-        const title = buildTitle(titleCache.get(model.index) ?? '', lp);
+        // Por parte, no por posición: las páginas armadas (trabajo del día, torneo) comparten la página en blanco.
+        if (!titleCache.has(model.part)) titleCache.set(model.part, readTitle(slideDoc.documentElement as unknown as Element, map));
+        const title = buildTitle(titleCache.get(model.part) ?? '', lp);
         let fields = lp.fields;
         let continuation = false;
         for (let i = 0; i <= MAX_CONTINUATIONS; i++) {
@@ -262,6 +277,11 @@ export async function generateNotebook(params: {
       g.pageId = page.logical.pageId;
       g.type = page.logical.type;
     }
+    if (page.logical.kind === 'robotMap') {
+      g.pageId = page.logical.map.id;
+      g.type = page.logical.map.kind === 'ports' ? 'portMap' : 'controllerMap';
+    }
+    if (page.logical.kind === 'calendar') g.type = 'calendar';
     if (page.number) g.number = page.number;
     if (page.title) g.title = resolveRefs(page.title);
     if (page.continuation) g.continuation = true;
@@ -293,10 +313,26 @@ function collectImageRefs(doc: NotebookDocument): ImageRef[] {
   return refs;
 }
 
-async function loadImages(doc: NotebookDocument, load: AssetLoader): Promise<Map<string, ResolvedImage>> {
+/** El mapa del campo de la plantilla, recortado (con srcRect) al cuadro del campo. */
+function fieldImage(template: Template): ResolvedImage {
+  const bytes = template.fieldImage();
+  const full = readImageInfo(bytes);
+  const c = FIELD_IMAGE.crop;
+  // Si la imagen no mide lo esperado (otra plantilla), el recorte se escala.
+  const sx = full.width / FIELD_IMAGE.width;
+  const sy = full.height / FIELD_IMAGE.height;
+  const crop = { x: c.x * sx, y: c.y * sy, width: c.width * sx, height: c.height * sy, fullWidth: full.width, fullHeight: full.height };
+  return { src: TEMPLATE_FIELD_IMAGE, bytes, info: { format: full.format, width: Math.round(crop.width), height: Math.round(crop.height) }, crop };
+}
+
+async function loadImages(doc: NotebookDocument, load: AssetLoader, field: () => ResolvedImage): Promise<Map<string, ResolvedImage>> {
   const out = new Map<string, ResolvedImage>();
   for (const ref of collectImageRefs(doc)) {
     if (out.has(ref.src)) continue;
+    if (ref.src === TEMPLATE_FIELD_IMAGE) {
+      out.set(ref.src, field());
+      continue;
+    }
     let bytes: Uint8Array;
     try {
       bytes = await load(ref.src);
@@ -351,7 +387,7 @@ function isTocEntry(p: PhysicalPage): boolean {
   if (p.continuation) return false;
   const k = p.logical.kind;
   // Las páginas de referencia (rayada, en blanco...) no tienen título: basta con su separador.
-  return k === 'content' || k === 'divider' || k === 'resources';
+  return k === 'content' || k === 'divider' || k === 'resources' || k === 'robotMap' || k === 'calendar';
 }
 
 function tocLine(p: PhysicalPage, template: Template, lang: 'es' | 'en', resolve: (s: string) => string): TocLine {
@@ -362,6 +398,8 @@ function tocLine(p: PhysicalPage, template: Template, lang: 'es' | 'en', resolve
   if (lp.kind === 'content') {
     return { number: p.number ?? '', title: resolve(p.title ?? ''), date: formatDate(lp.date, lang), header: false };
   }
+  if (lp.kind === 'robotMap') return { number: p.number ?? '', title: p.title ?? '', date: formatDate(lp.map.date, lang), header: false };
+  if (lp.kind === 'calendar') return { number: p.number ?? '', title: p.title ?? '', date: '', header: false };
   return { number: p.number ?? '', title: slideTitleText(template, p.model), date: '', header: false };
 }
 
@@ -412,6 +450,12 @@ function renderPage(
     }
     case 'asIs':
       setFooter(editor, map, { project: doc.project, name: '', date: '', page: page.number ?? '' });
+      return;
+    case 'robotMap':
+      renderRobotMap(editor, page, doc, map);
+      return;
+    case 'calendar':
+      renderCalendar(editor, page, lp, doc, map);
       return;
     case 'content':
       break;

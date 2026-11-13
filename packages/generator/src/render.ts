@@ -9,6 +9,7 @@ import type { PlaceholderRef, StandardDefaults, TocMapping } from './field-map.t
 import { languageTag } from './format.ts';
 import { layoutGrid } from './images.ts';
 import type { AreaPlacement, BlockPlacement, BoxPt, TablePlacement } from './layout.ts';
+import { groupXml, marksXml } from './marks.ts';
 import { ellipsize, textHeightPt, type FontSpec } from './measure.ts';
 import type { ResolvedImage } from './plan.ts';
 import { EMU_PER_PT, cNvPrOf, readBox, shapeElements, shapeName, spTreeOf, writeBox } from './template.ts';
@@ -207,7 +208,8 @@ export class SlideEditor {
         if (!cell) return;
         const x = box.x + (area.gridOrigin?.x ?? 0) + cell.x;
         const y = box.y + (area.gridOrigin?.y ?? 0) + cell.y;
-        const pic = this.picture(img, images.embed(img), { x, y, w: cell.width, h: cell.height });
+        const cellBox = { x, y, w: cell.width, h: cell.height };
+        const pic = img.marks && img.marks.length > 0 ? this.annotatedPicture(img, images.embed(img), cellBox) : this.picture(img, images.embed(img), cellBox);
         insertAfter(pic, anchor);
         anchor = pic;
         const cap = area.grid?.captions[i];
@@ -221,14 +223,30 @@ export class SlideEditor {
   }
 
   picture(img: ResolvedImage, relId: string, b: BoxPt): Element {
+    return fragment(this.doc, this.pictureXml(img, relId, b));
+  }
+
+  pictureXml(img: ResolvedImage, relId: string, b: BoxPt): string {
     const id = this.newId();
     const descr = escapeXml(img.caption ?? img.src.split('/').pop() ?? 'foto');
-    return fragment(
-      this.doc,
+    const c = img.crop;
+    // Recorte en milésimas de por ciento de cada lado (srcRect).
+    const src = c
+      ? `<a:srcRect l="${Math.round((c.x / c.fullWidth) * 100000)}" t="${Math.round((c.y / c.fullHeight) * 100000)}" r="${Math.round(((c.fullWidth - c.x - c.width) / c.fullWidth) * 100000)}" b="${Math.round(((c.fullHeight - c.y - c.height) / c.fullHeight) * 100000)}"/>`
+      : '';
+    return (
       `<p:pic><p:nvPicPr><p:cNvPr id="${id}" name="Foto ${id}" descr="${descr}"/><p:cNvPicPr><a:picLocks noChangeAspect="1"/></p:cNvPicPr><p:nvPr/></p:nvPicPr>` +
-        `<p:blipFill><a:blip r:embed="${relId}"/><a:stretch><a:fillRect/></a:stretch></p:blipFill>` +
-        `<p:spPr><a:xfrm><a:off x="${pt(b.x)}" y="${pt(b.y)}"/><a:ext cx="${pt(b.w)}" cy="${pt(b.h)}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></p:spPr></p:pic>`,
+      `<p:blipFill><a:blip r:embed="${relId}"/>${src}<a:stretch><a:fillRect/></a:stretch></p:blipFill>` +
+      `<p:spPr><a:xfrm><a:off x="${pt(b.x)}" y="${pt(b.y)}"/><a:ext cx="${pt(b.w)}" cy="${pt(b.h)}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></p:spPr></p:pic>`
     );
+  }
+
+  /** La imagen con sus flechas y etiquetas encima, agrupadas. */
+  annotatedPicture(img: ResolvedImage, relId: string, b: BoxPt): Element {
+    const groupId = this.newId();
+    const pic = this.pictureXml(img, relId, b);
+    const shapes = marksXml(img.marks ?? [], b, languageTag(this.lang), () => this.newId());
+    return fragment(this.doc, groupXml(groupId, img.crop ? `Mapa con ruta ${groupId}` : `Foto anotada ${groupId}`, b, [pic, ...shapes]));
   }
 
   caption(text: string, b: BoxPt): Element {

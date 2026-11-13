@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { mergeEntry, type Attendance, type Entry, type PutEntryResponse, type SessionClosing } from '@vortex-wake/shared';
+import { mergeEntry, mergeTask, type Attendance, type Entry, type PutEntryResponse, type PutTaskResponse, type SessionClosing, type TaskItem } from '@vortex-wake/shared';
 import { HttpStatusError, MemoryQueueStore, NetworkError, SyncQueue, type Transport } from '../src/sync-queue.ts';
 
 /** Servidor falso: guarda lo recibido y se puede "desconectar". */
@@ -43,6 +43,13 @@ class FakeServer implements Transport {
   }
   async addMember(id: string) {
     this.check(`member:${id}`);
+  }
+  tasks = new Map<string, TaskItem>();
+  async putTask(t: TaskItem): Promise<PutTaskResponse> {
+    this.check(`task:${t.id}`);
+    const r = mergeTask(this.tasks.get(t.id), structuredClone(t));
+    if (r.applied) this.tasks.set(t.id, r.task);
+    return r;
   }
 }
 
@@ -162,5 +169,27 @@ describe('cola de sincronización', () => {
     await queue.flush();
     expect(server.calls).toEqual(['member:nuevo', 'closing']);
     expect(server.closings[0]?.whatWeDid).toBe('x');
+  });
+
+  it('pendientes: sin conexión se quedan; al volver se mandan después del cierre, y gana la versión más nueva', async () => {
+    const { store, server, queue, advance } = setup();
+    const t: TaskItem = { id: 'n-1', text: 'Probar el intake', fromDate: '2026-11-12', source: 'closing', createdAt: '2026-11-12T20:00:00.000Z', updatedAt: '2026-11-12T20:00:00.000Z' };
+    store.tasks.set(t.id, t);
+    store.closings.set('2026-11-12', { whatsNext: 'Probar el intake', updatedAt: t.updatedAt });
+    server.online = false;
+    await queue.enqueue({ kind: 'task', taskId: t.id });
+    await queue.enqueue({ kind: 'closing', date: '2026-11-12' });
+    expect((await queue.flush()).online).toBe(false);
+    expect(store.ops.size).toBe(2);
+    server.online = true;
+    advance(5000);
+    await queue.flush();
+    expect(server.calls).toEqual(['closing', 'task:n-1']);
+    expect(store.ops.size).toBe(0);
+    // Otro teléfono ya lo marcó como hecho después: el servidor responde con esa versión.
+    server.tasks.set(t.id, { ...t, done: { by: 'b', at: '2026-11-13T16:00:00.000Z' }, updatedAt: '2026-11-13T16:00:00.000Z' });
+    await queue.enqueue({ kind: 'task', taskId: t.id });
+    await queue.flush();
+    expect(store.tasks.get(t.id)?.done?.by).toBe('b');
   });
 });

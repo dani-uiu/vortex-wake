@@ -1,7 +1,8 @@
-import { ENTRY_KIND_LABELS, MARK_LABELS, SECTION_LABELS, isUnclassified, type Entry } from '@vortex-wake/shared';
+import { ENTRY_KIND_LABELS, MARK_LABELS, SECTION_LABELS, isUnclassified, matchRow, type Entry } from '@vortex-wake/shared';
 import type { App } from '../app.ts';
 import { targetLabel } from '../classify.ts';
 import { h, icon, timeOf } from '../ui.ts';
+import { annotationsToMarks, markedImage } from './marks.ts';
 
 /** Indicador de sincronización: "guardado en este teléfono" / "enviado". */
 /**
@@ -57,6 +58,8 @@ export function entrySummary(e: Entry): string {
     else if (el.type === 'trials' && el.trials.length > 0) parts.push(`Prueba: ${el.trials.filter((t) => t.ok).length} de ${el.trials.length}`);
     else if (el.type === 'table') parts.push(`Tabla (${el.rows.length} filas)`);
     else if (el.type === 'photo' && el.caption?.trim()) parts.push(el.caption.trim());
+    else if (el.type === 'route') parts.push(`Ruta del autónomo: ${el.points.length} paso(s)`);
+    else if (el.type === 'match') parts.push(['Partido', ...matchRow(el).slice(0, 3)].filter((s) => s).join(' · '));
   }
   return parts.join(' · ');
 }
@@ -68,9 +71,7 @@ export function entryCard(app: App, e: Entry, onOpen: (id: string) => void, vari
   const thumb = h('div', { class: 'thumb' });
   const first = photos[0];
   if (first && first.type === 'photo') {
-    const img = h('img', { alt: '', decoding: 'async' });
-    void app.photoUrl(first.photoId).then((u) => (img.src = u));
-    thumb.append(img);
+    thumb.append(markedImage(app.photoUrl(first.photoId), annotationsToMarks(first.annotations), { fit: 'cover' }));
     if (photos.length > 1) thumb.append(h('span', { class: 'count', text: `+${photos.length - 1}` }));
   } else {
     const kindIcon = e.elements.some((x) => x.type === 'trials') ? 'trials' : e.elements.some((x) => x.type === 'link') ? 'link' : 'text';
@@ -104,7 +105,7 @@ export function entryCard(app: App, e: Entry, onOpen: (id: string) => void, vari
       'div',
       { class: 'card-body' },
       h('div', { class: 'card-top' }, h('span', { class: 'time', text: timeOf(e.createdAt) }), statusPill(app, e, true)),
-      summary ? h('div', { class: 'summary', text: summary }) : h('div', { class: 'summary muted', text: photos.length > 0 ? (photos.length === 1 ? 'Foto' : `${photos.length} fotos`) : 'Vacía' }),
+      summary ? h('div', { class: 'summary', text: summary }) : h('div', { class: 'summary muted', text: photos.length > 0 ? (photos.every((p) => p.type === 'photo' && p.sketch) ? 'Boceto' : photos.length === 1 ? 'Foto' : `${photos.length} fotos`) : 'Vacía' }),
       chips.length > 0 ? h('div', { class: 'tags' }, chips) : null,
       authors ? h('div', { class: 'authors muted', text: authors }) : null,
     ),

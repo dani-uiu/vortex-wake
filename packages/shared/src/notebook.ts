@@ -37,6 +37,23 @@ export interface NotebookDocument {
   editors?: string[];
   sessions?: NotebookSession[];
   pages: NotebookPage[];
+  /**
+   * Mapas de puertos del Brain y del control, por robot y por versión. Van en
+   * Cableado, en orden de fecha, sobre las páginas de la plantilla que traen
+   * esos diagramas. Opcional.
+   */
+  robotMaps?: RobotMapPage[];
+}
+
+export interface RobotMapPage {
+  id: string;
+  kind: 'ports' | 'controller';
+  /** Nombre del robot (va en el título). */
+  robot: string;
+  date: IsoDate;
+  authors: string[];
+  /** Lugar (`PORT_SLOTS` o `CONTROLLER_SLOTS`) → qué hay ahí. */
+  slots: Record<string, string>;
 }
 
 export interface NotebookMember {
@@ -56,9 +73,42 @@ export interface NotebookSession {
 }
 
 export interface ImageRef {
-  /** Ruta del archivo PNG o JPEG, relativa al documento. */
+  /**
+   * Ruta del archivo PNG o JPEG, relativa al documento. `template:field` es
+   * el mapa del campo que trae la plantilla (lo pone el generador).
+   */
   src: string;
   caption?: string;
+  /** Flechas y etiquetas que el generador dibuja encima, como formas de PowerPoint. */
+  marks?: ImageMark[];
+}
+
+/** Imagen especial: el mapa del campo de la plantilla (página "Campo… en blanco"). */
+export const TEMPLATE_FIELD_IMAGE = 'template:field';
+
+/**
+ * El mapa del campo: imagen de fondo (página completa) de la página "Campo en
+ * blanco" de la plantilla, y el cuadro del campo dentro de ella (pixeles). La
+ * app muestra ese mismo recorte (`public/field.png`) para dibujar la ruta, así
+ * que las coordenadas (0 a 1 dentro del cuadro) coinciden con la bitácora.
+ * Si cambia la plantilla de temporada, se vuelve a medir (ver
+ * `packages/app/scripts/extract-field.ts`).
+ */
+export const FIELD_IMAGE = { width: 1583, height: 2048, crop: { x: 213, y: 447, width: 1157, height: 1157 } } as const;
+
+/**
+ * Marca sobre una imagen, en coordenadas relativas (0 a 1).
+ * - `label`: un círculo con texto ("A", "3") en (x, y); si trae (tx, ty), una
+ *   flecha del círculo a ese punto.
+ * - `arrow`: una flecha de (x, y) a (tx, ty).
+ */
+export interface ImageMark {
+  kind: 'label' | 'arrow';
+  text?: string;
+  x: number;
+  y: number;
+  tx?: number;
+  ty?: number;
 }
 
 /** Contenido de un recuadro: texto (párrafos separados por `\n`) y fotos. */
@@ -82,6 +132,11 @@ export interface ChangeRecord {
   /** Datos de la prueba que motivó el cambio. */
   evidence?: string;
   result?: string;
+  /**
+   * Registro de cambios al que va, si no es el de la sección de la página
+   * (por ejemplo, un ajuste hecho en un torneo, que es de Estrategia).
+   */
+  section?: SectionId;
 }
 
 export interface CreditRecord {
@@ -240,6 +295,17 @@ export const PAGE_TYPES = {
     placement: 'section',
     sections: ['strategy'],
     fields: { path: area, steps: table(4), rationale: area, testResults: area },
+  },
+  /**
+   * Registro de torneo: una fila por partido (alianza, marcador, qué falló y
+   * qué se ajustó) y un recuadro de notas y fotos. La plantilla no la trae; el
+   * generador la arma sobre la página en blanco con la tabla de la página de
+   * análisis del juego.
+   */
+  tournamentLog: {
+    placement: 'section',
+    sections: ['strategy'],
+    fields: { matches: table(5), notes: area },
   },
   /**
    * Trabajo del día: lo capturado que todavía no tiene tipo de página. La

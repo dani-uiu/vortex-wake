@@ -18,12 +18,20 @@
  */
 
 import {
+  ALLIANCE_LABELS,
+  MATCH_RESULT_LABELS,
+  cleanSlots,
   initialsOf,
+  slugify,
+  type MatchElement,
+  type RoutePoint,
   type CaptureSession,
   type Entry,
   type EntryElement,
   type EntryKind,
   type IsoDate,
+  type PhotoAnnotation,
+  type PhotoLabel,
   type SectionId,
   type TeamConfig,
 } from './model.ts';
@@ -31,14 +39,17 @@ import {
   NOTEBOOK_FORMAT,
   NOTEBOOK_VERSION,
   PAGE_TYPES,
+  TEMPLATE_FIELD_IMAGE,
   type AreaContent,
   type ChangeRecord,
   type CreditRecord,
   type FieldValue,
+  type ImageMark,
   type ImageRef,
   type Language,
   type NotebookDocument,
   type NotebookPage,
+  type RobotMapPage,
   type PageTypeSpec,
 } from './notebook.ts';
 
@@ -64,6 +75,13 @@ interface FieldPlan {
   photos: string;
   table?: string;
   trials?: string;
+  /**
+   * Tabla que se llena con las etiquetas de las fotos anotadas (letra, qué es,
+   * qué hace, por qué). `mechanism`: 3 columnas ("A: qué es", qué hace, por
+   * qué); `wiring`: 4 (letra, qué es, qué hace, por qué). Sin esta tabla, las
+   * etiquetas van como renglones en el texto.
+   */
+  labels?: { field: string; layout: 'mechanism' | 'wiring' };
 }
 
 /** Campo de cada tipo de página donde va cada cosa. */
@@ -74,12 +92,13 @@ export const FIELD_PLAN: Record<EntryKind, FieldPlan> = {
   buildIteration: { text: 'changes', photos: 'photos', trials: 'testResults' },
   test: { text: 'analysis', photos: 'analysis', table: 'results', trials: 'results' },
   decision: { text: 'decision', photos: 'evidence', table: 'options' },
-  mechanism: { text: 'howItWorks', photos: 'picture', table: 'labels' },
+  mechanism: { text: 'howItWorks', photos: 'picture', table: 'labels', labels: { field: 'labels', layout: 'mechanism' } },
   codeDoc: { text: 'purpose', photos: 'pseudocode', trials: 'relatedTests' },
-  wiringDoc: { text: 'problems', photos: 'diagram', table: 'ports' },
+  wiringDoc: { text: 'problems', photos: 'diagram', table: 'ports', labels: { field: 'ports', layout: 'wiring' } },
   reflection: { text: 'learned', photos: 'learned' },
   gameAnalysis: { text: 'strategy', photos: 'strategy', table: 'priorities' },
   autonomousPlan: { text: 'rationale', photos: 'path', table: 'steps', trials: 'testResults' },
+  tournamentLog: { text: 'notes', photos: 'notes', table: 'matches' },
 };
 
 const INFERRED_SECTION: Partial<Record<EntryKind, SectionId>> = {
@@ -89,6 +108,7 @@ const INFERRED_SECTION: Partial<Record<EntryKind, SectionId>> = {
   wiringDoc: 'wiring',
   gameAnalysis: 'strategy',
   autonomousPlan: 'strategy',
+  tournamentLog: 'strategy',
 };
 
 const SECTION_ORDER: SectionId[] = ['mechanics', 'coding', 'wiring', 'strategy'];
@@ -189,19 +209,47 @@ export function assembleNotebook(input: AssembleInput): AssembleResult {
     const trialTexts: string[] = [];
     const tableColumns = plan.table ? columnsOf(spec, plan.table) : 0;
     let trialNumber = 0;
+    const labelItems: { label: PhotoLabel; photo: number }[] = [];
+    const matchChanges: (ChangeRecord & { date: IsoDate })[] = [];
+    const routeRows: string[][] = [];
     for (const e of g.entries) {
       const parts: string[] = [];
       for (const el of e.elements) {
         switch (el.type) {
-          case 'photo':
+          case 'photo': {
             photoIds.add(el.photoId);
-            images.push(el.caption ? { src: photoSrc(el.photoId), caption: el.caption } : { src: photoSrc(el.photoId) });
+            const ref: ImageRef = { src: photoSrc(el.photoId) };
+            if (el.caption) ref.caption = el.caption;
+            const marks = annotationMarks(el.annotations);
+            if (marks.length > 0) ref.marks = marks;
+            images.push(ref);
+            for (const a of el.annotations ?? []) {
+              if (a.type === 'label') labelItems.push({ label: a, photo: images.length });
+            }
             break;
+          }
           case 'table':
             if (plan.table && !(plan.trials === plan.table && hasTrials(g))) {
               for (const r of el.rows) tableRows.push(fitRow(r, tableColumns));
             } else parts.push(tableText(el));
             break;
+          case 'route': {
+            if (el.points.length === 0) break;
+            images.push({ src: TEMPLATE_FIELD_IMAGE, marks: routeMarks(el.points) });
+            const rows = el.points.map((p, i) => [String(i + 1), p.action?.trim() ?? '', p.expected?.trim() ?? '', p.points?.trim() ?? '']);
+            if (plan.table === 'steps') routeRows.push(...rows);
+            else parts.push(rows.map((r) => r.filter((c) => c).join('. ')).join('\n'));
+            break;
+          }
+          case 'match': {
+            const row = matchRow(el);
+            if (plan.table === 'matches') tableRows.push(row);
+            else parts.push(row.filter((c) => c).join(' · '));
+            if (el.adjusted?.trim() && el.adjustedSection) {
+              matchChanges.push({ section: el.adjustedSection, change: el.adjusted.trim(), evidence: [el.match.trim() ? `Partido ${el.match.trim()}` : '', row[2] ?? '', el.failed?.trim() ?? ''].filter((s) => s).join(' · '), date: e.sessionDate });
+            }
+            break;
+          }
           case 'trials': {
             if (el.trials.length === 0) break;
             if (plan.trials && plan.trials === plan.table) {
@@ -221,6 +269,13 @@ export function assembleNotebook(input: AssembleInput): AssembleResult {
       }
       if (parts.length > 0) texts.push(parts.join('\n'));
     }
+
+    // Etiquetas de las fotos anotadas → tabla de etiquetas (o texto).
+    // Pasos de la ruta (en orden) → tabla de pasos del plan de autónomo, antes de las tablas capturadas.
+    if (routeRows.length > 0) tableRows.unshift(...routeRows);
+    const labelRows = labelTableRows(labelItems, plan.labels?.layout);
+    if (plan.labels) tableRows.unshift(...labelRows);
+    else if (labelRows.length > 0) texts.push(labelRows.map((r) => r.filter((c) => c.trim()).join(' · ')).join('\n'));
 
     const fields: Record<string, FieldValue> = {};
     const area = (key: string): AreaContent => {
@@ -273,6 +328,13 @@ export function assembleNotebook(input: AssembleInput): AssembleResult {
         }
       }
     }
+    // Lo que "se ajustó" en un partido va al registro de cambios de su sección, con el partido como evidencia.
+    for (const c of matchChanges) {
+      const rec: ChangeRecord = { section: c.section as SectionId, change: c.change, test: page.id };
+      if (c.evidence) rec.evidence = c.evidence;
+      if (c.date !== first.sessionDate) rec.date = c.date;
+      changes.push(rec);
+    }
     if (changes.length > 0) page.changes = changes;
     if (credits.length > 0) page.credits = credits;
     pages.push(page);
@@ -314,11 +376,79 @@ export function assembleNotebook(input: AssembleInput): AssembleResult {
   };
   const editors = team.editors?.filter((e) => memberIds.has(e));
   if (editors && editors.length > 0) document.editors = editors;
+
+  // Mapas de puertos y del control: una página por versión (la anterior queda con su fecha).
+  const robotMaps: RobotMapPage[] = [];
+  for (const robot of team.robots) {
+    for (const kind of ['ports', 'controller'] as const) {
+      (robot[kind] ?? []).forEach((v, i) => {
+        if (Object.keys(cleanSlots(v.slots)).length === 0) return;
+        const by = v.by && memberIds.has(v.by) ? [v.by] : (editors && editors.length > 0 ? editors : fallbackAuthor ? [fallbackAuthor] : []);
+        robotMaps.push({ id: `map-${kind}-${slugify(robot.id)}-${i + 1}`, kind, robot: robot.name, date: v.date, authors: by, slots: cleanSlots(v.slots) });
+      });
+    }
+  }
+  if (robotMaps.length > 0) document.robotMaps = robotMaps;
   return { document, warnings, photoIds: [...photoIds] };
 
   function hasTrials(g: Group): boolean {
     return g.entries.some((e) => e.elements.some((el) => el.type === 'trials' && el.trials.length > 0));
   }
+}
+
+/** Fila de la tabla de partidos: partido, alianza (aliado y rivales), marcador, qué falló, qué ajustamos. */
+export function matchRow(m: MatchElement): string[] {
+  const alliance = [m.alliance ? ALLIANCE_LABELS[m.alliance] : '', m.partner?.trim() ? `con ${m.partner.trim()}` : '', m.opponents?.trim() ? `vs ${m.opponents.trim()}` : '']
+    .filter((s) => s)
+    .join(' ');
+  const score = [m.ourScore?.trim() || m.theirScore?.trim() ? `${m.ourScore?.trim() || '?'}-${m.theirScore?.trim() || '?'}` : '', m.result ? MATCH_RESULT_LABELS[m.result] : ''].filter((s) => s).join(' · ');
+  return [m.match.trim(), alliance, score, m.failed?.trim() ?? '', m.adjusted?.trim() ?? ''];
+}
+
+/** Ruta → marcas: una flecha de cada punto al siguiente y un círculo numerado en cada punto. */
+export function routeMarks(points: RoutePoint[]): ImageMark[] {
+  const out: ImageMark[] = [];
+  for (let i = 0; i + 1 < points.length; i++) {
+    const a = points[i] as RoutePoint;
+    const b = points[i + 1] as RoutePoint;
+    out.push({ kind: 'arrow', x: a.x, y: a.y, tx: b.x, ty: b.y });
+  }
+  points.forEach((p, i) => out.push({ kind: 'label', text: String(i + 1), x: p.x, y: p.y }));
+  return out;
+}
+
+/** Anotaciones de la foto → marcas que el generador dibuja como formas. */
+export function annotationMarks(list: PhotoAnnotation[] | undefined): ImageMark[] {
+  const out: ImageMark[] = [];
+  for (const a of list ?? []) {
+    if (a.type === 'arrow') out.push({ kind: 'arrow', x: a.x, y: a.y, tx: a.tx, ty: a.ty });
+    else {
+      const m: ImageMark = { kind: 'label', text: a.letter, x: a.x, y: a.y };
+      if (a.tx !== undefined && a.ty !== undefined) {
+        m.tx = a.tx;
+        m.ty = a.ty;
+      }
+      out.push(m);
+    }
+  }
+  return out;
+}
+
+/**
+ * Filas de la tabla de etiquetas, en orden de foto y de letra. Si una letra se
+ * repite en dos fotos de la misma página, se aclara de qué foto es.
+ */
+export function labelTableRows(items: { label: PhotoLabel; photo: number }[], layout: 'mechanism' | 'wiring' = 'wiring'): string[][] {
+  const photosOf = new Map<string, Set<number>>();
+  for (const { label, photo } of items) photosOf.set(label.letter, (photosOf.get(label.letter) ?? new Set()).add(photo));
+  const sorted = [...items].sort((a, b) => a.photo - b.photo || a.label.letter.length - b.label.letter.length || (a.label.letter < b.label.letter ? -1 : a.label.letter > b.label.letter ? 1 : 0));
+  return sorted.map(({ label, photo }) => {
+    const letter = (photosOf.get(label.letter)?.size ?? 0) > 1 ? `${label.letter} (foto ${photo})` : label.letter;
+    const what = label.what?.trim() ?? '';
+    const does = label.does?.trim() ?? '';
+    const why = label.why?.trim() ?? '';
+    return layout === 'mechanism' ? [what ? `${letter}: ${what}` : letter, does, why] : [letter, what, does, why];
+  });
 }
 
 function columnsOf(spec: PageTypeSpec, field: string): number {

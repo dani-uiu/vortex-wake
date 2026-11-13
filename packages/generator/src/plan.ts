@@ -12,9 +12,11 @@ import {
   SECTIONS,
   toAreaContent,
   type AreaValue,
+  type ImageMark,
   type NotebookDocument,
   type NotebookPage,
   type PageType,
+  type RobotMapPage,
   type SectionId,
 } from '@vortex-wake/shared';
 import type { TemplateSection } from './field-map.ts';
@@ -28,7 +30,12 @@ export interface ResolvedImage {
   src: string;
   caption?: string;
   bytes: Uint8Array;
+  /** Tamaño ya recortado (si hay `crop`). */
   info: ImageInfo;
+  /** Flechas y etiquetas que se dibujan encima. */
+  marks?: ImageMark[];
+  /** Recorte (en pixeles de la imagen completa); PowerPoint lo aplica con `srcRect`. */
+  crop?: { x: number; y: number; width: number; height: number; fullWidth: number; fullHeight: number };
 }
 
 export interface AreaData {
@@ -70,12 +77,44 @@ export type LogicalPage =
   | { kind: 'toc' }
   | { kind: 'divider'; section: TemplateSection }
   | { kind: 'asIs'; slide: TemplateSlide; group: NumberGroup }
+  | RobotMapLogical
+  | CalendarLogical
   | ContentPage;
+
+/** Mapa de puertos o del control de un robot (una versión). */
+export interface RobotMapLogical {
+  kind: 'robotMap';
+  map: RobotMapPage;
+  group: NumberGroup;
+}
+
+/** Un mes del calendario con las sesiones de ese mes (un renglón por día). */
+export interface CalendarLogical {
+  kind: 'calendar';
+  slide: TemplateSlide;
+  title: string;
+  table: string;
+  /** Texto de cada día (índice 0 = día 1). */
+  days: string[];
+  /** Última sesión del mes (fecha del pie). */
+  date: string;
+  group: NumberGroup;
+}
+
+export interface CalendarSlideInfo {
+  slide: TemplateSlide;
+  year: number;
+  month: number;
+  table: string;
+  title: string;
+}
 
 export interface PlanOptions {
   includeResources: boolean;
   includeReferencePages: boolean;
   referenceSlides: TemplateSlide[];
+  /** Páginas de calendario de la plantilla (si se incluyen calendarios). */
+  calendarSlides?: CalendarSlideInfo[];
 }
 
 export type ImageLookup = (src: string) => ResolvedImage;
@@ -111,13 +150,21 @@ export function planNotebook(doc: NotebookDocument, images: ImageLookup, opts: P
   }
   const timeline = timelinePage(doc);
   if (timeline) out.push(timeline);
+  out.push(...calendarPages(doc, opts.calendarSlides ?? []));
 
   // Las cuatro secciones.
   const iterations = iterationNumbers(doc);
   for (const section of SECTIONS) {
     out.push({ kind: 'divider', section });
     const pages = sortChrono(doc.pages.filter((p) => PAGE_TYPES[p.type].placement === 'section' && p.section === section));
-    for (const p of pages) {
+    // Los mapas de puertos y del control van en Cableado, en orden de fecha con las demás páginas.
+    const maps = section === 'wiring' ? (doc.robotMaps ?? []).map((m) => ({ date: m.date, map: m })) : [];
+    for (const item of sortChrono<{ date: string; page?: NotebookPage; map?: RobotMapPage }>([...pages.map((p) => ({ date: p.date, page: p })), ...maps])) {
+      if (item.map) {
+        out.push({ kind: 'robotMap', map: item.map, group: section });
+        continue;
+      }
+      const p = item.page as NotebookPage;
       const c = toContent(p, section, section);
       const it = iterations.get(p.id);
       if (it !== undefined) c.iteration = it;
@@ -154,7 +201,11 @@ function contentFromPage(p: NotebookPage, section: TemplateSection, group: Numbe
         kind: 'area',
         text: a.text ?? '',
         code: a.code ?? false,
-        images: (a.images ?? []).map((img) => ({ ...images(img.src), ...(img.caption ? { caption: img.caption } : {}) })),
+        images: (a.images ?? []).map((img) => ({
+          ...images(img.src),
+          ...(img.caption ? { caption: img.caption } : {}),
+          ...(img.marks && img.marks.length > 0 ? { marks: img.marks } : {}),
+        })),
       };
     } else {
       fields[key] = { kind: 'table', rows: (value as string[][] | undefined) ?? [], fixed: fs.kind === 'fixedTable' };
@@ -213,13 +264,37 @@ function timelinePage(doc: NotebookDocument): ContentPage | undefined {
   });
 }
 
+/**
+ * Calendarios: un mes por cada página de calendario de la plantilla que tenga
+ * sesiones; en el renglón de cada día, la reunión (con quiénes) y el resumen
+ * corto del cierre. Los meses sin página en la plantilla no salen (aviso en
+ * generate.ts).
+ */
+function calendarPages(doc: NotebookDocument, slides: CalendarSlideInfo[]): CalendarLogical[] {
+  const out: CalendarLogical[] = [];
+  const sessions = sortChrono(doc.sessions ?? []);
+  for (const s of slides) {
+    const prefix = `${s.year}-${String(s.month).padStart(2, '0')}-`;
+    const inMonth = sessions.filter((x) => x.date.startsWith(prefix));
+    if (inMonth.length === 0) continue;
+    const days: string[] = Array.from({ length: 31 }, () => '');
+    for (const x of inMonth) {
+      const d = Number(x.date.slice(8, 10));
+      days[d - 1] = [x.event, x.summary].filter((t) => t.trim()).join(' — ');
+    }
+    out.push({ kind: 'calendar', slide: s.slide, title: s.title, table: s.table, days, date: (inMonth[inMonth.length - 1] as { date: string }).date, group: 'organization' });
+  }
+  return out;
+}
+
 /** Registro de cambios de una sección, a partir de `changes` de sus páginas. */
 function changeLogPage(doc: NotebookDocument, section: SectionId): ContentPage | undefined {
   if (!(PAGE_TYPES.changeLog.sections as readonly string[]).includes(section)) return undefined;
   const records: { date: string; row: string[]; authors: string[] }[] = [];
   for (const p of doc.pages) {
-    if (p.section !== section || !p.changes) continue;
+    if (!p.changes) continue;
     for (const c of p.changes) {
+      if ((c.section ?? p.section) !== section) continue;
       const date = c.date ?? p.date;
       const why = [c.test ? `{{page:${c.test}}}` : '', c.evidence ?? ''].filter((s) => s !== '').join(': ');
       records.push({ date, row: [formatDate(date, doc.language), c.change, why, c.result ?? ''], authors: p.authors });

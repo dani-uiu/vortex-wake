@@ -65,6 +65,13 @@ async function boot(): Promise<void> {
       cleanup = renderQr(root, app);
       return;
     }
+    // El cierre de un día pasado se puede llenar desde la computadora sin elegir persona.
+    const pastClosing = /^#\/cierre\/(\d{4}-\d{2}-\d{2})(\?desde=escritorio)?$/.exec(hash);
+    if (pastClosing) {
+      const back = pastClosing[2] ? '#/escritorio' : '#/';
+      cleanup = renderClosing(root, app, go, pastClosing[1] as string, back);
+      return;
+    }
     if (!app.me && hash !== '#/quien') return go('#/quien');
     const m = /^#\/entrada\/(.+)$/.exec(hash);
     if (m) cleanup = renderEditor(root, app, decodeURIComponent(m[1] as string), () => go('#/'));

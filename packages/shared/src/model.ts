@@ -49,6 +49,70 @@ export interface Robot {
   id: string;
   name: string;
   subsystems: string[];
+  /** Mapa de puertos del Brain, con historial (la última es la vigente). Opcional. */
+  ports?: DeviceMapVersion[];
+  /** Mapa del control (qué hace cada botón y palanca), con historial. Opcional. */
+  controller?: DeviceMapVersion[];
+}
+
+/** Una versión de un mapa (puertos o control): qué va en cada lugar, y desde cuándo. */
+export interface DeviceMapVersion {
+  /** Día en que se guardó esta versión (va como fecha de la página). */
+  date: IsoDate;
+  savedAt: IsoDateTime;
+  by?: string;
+  /** Lugar → qué hay ahí. Lugares en `PORT_SLOTS` o `CONTROLLER_SLOTS`. */
+  slots: Record<string, string>;
+}
+
+export type DeviceMapKind = 'ports' | 'controller';
+
+/** Puertos del Brain V5: 1 a 21 (inteligentes) y A a H (3 hilos). */
+export const PORT_SLOTS: string[] = [...Array.from({ length: 21 }, (_, i) => String(i + 1)), ...'ABCDEFGH'.split('')];
+
+/** Botones y palancas del control V5, con su nombre en la interfaz. */
+export const CONTROLLER_SLOTS: [string, string][] = [
+  ['L1', 'L1'],
+  ['L2', 'L2'],
+  ['R1', 'R1'],
+  ['R2', 'R2'],
+  ['axis3', 'Palanca izquierda ↕ (3)'],
+  ['axis4', 'Palanca izquierda ↔ (4)'],
+  ['axis2', 'Palanca derecha ↕ (2)'],
+  ['axis1', 'Palanca derecha ↔ (1)'],
+  ['up', 'Flecha arriba'],
+  ['down', 'Flecha abajo'],
+  ['left', 'Flecha izquierda'],
+  ['right', 'Flecha derecha'],
+  ['X', 'X'],
+  ['A', 'A'],
+  ['B', 'B'],
+  ['Y', 'Y'],
+];
+
+/** Solo los lugares con texto (sin espacios de más). */
+export function cleanSlots(slots: Record<string, string>): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(slots)) if (v.trim()) out[k] = v.trim();
+  return out;
+}
+
+/**
+ * Guarda una versión nueva de un mapa conservando el historial: si no cambió
+ * nada, no se agrega; si la última versión es del mismo día, se reemplaza (un
+ * día = una versión); si no, se agrega y la anterior queda con su fecha.
+ */
+export function saveMapVersion(history: DeviceMapVersion[] | undefined, slots: Record<string, string>, date: IsoDate, now: IsoDateTime, by?: string): DeviceMapVersion[] {
+  const list = [...(history ?? [])];
+  const clean = cleanSlots(slots);
+  const last = list[list.length - 1];
+  const same = (a: Record<string, string>, b: Record<string, string>) => JSON.stringify(Object.entries(a).sort()) === JSON.stringify(Object.entries(b).sort());
+  if (last && same(last.slots, clean)) return list;
+  if (!last && Object.keys(clean).length === 0) return list;
+  const v: DeviceMapVersion = { date, savedAt: now, slots: clean, ...(by ? { by } : {}) };
+  if (last && last.date === date) list[list.length - 1] = v;
+  else list.push(v);
+  return list;
 }
 
 // --- Sesiones -------------------------------------------------------------------
@@ -74,6 +138,32 @@ export interface CaptureSession {
   closing?: SessionClosing;
 }
 
+// --- Pendientes ----------------------------------------------------------------------
+
+/**
+ * Un pendiente entre sesiones. Los que salen de "¿Qué sigue?" del cierre
+ * tienen un id que se calcula de la fecha y el texto del renglón
+ * (`closingTaskId`), así que dos teléfonos que guardan el mismo cierre no los
+ * duplican. Gana la versión con `updatedAt` más reciente, como las entradas.
+ */
+export interface TaskItem {
+  id: string;
+  text: string;
+  /** Día de la sesión en que se anotó. */
+  fromDate: IsoDate;
+  /** `closing`: un renglón de "¿Qué sigue?"; `manual`: se agregó a mano. */
+  source: 'closing' | 'manual';
+  createdAt: IsoDateTime;
+  updatedAt: IsoDateTime;
+  createdBy?: string;
+  /** Quién lo marcó como hecho y cuándo. */
+  done?: { by?: string; at: IsoDateTime };
+  /** Pospuesto: no se muestra antes de este día. */
+  snoozedUntil?: IsoDate;
+  /** Ya no aplica (o se quitó el renglón del cierre). */
+  deleted?: boolean;
+}
+
 // --- Micro-entradas ----------------------------------------------------------------
 
 /** Tipos de entrada: los tipos de página de la plantilla más "trabajo del día". */
@@ -89,7 +179,9 @@ export type EntryKind =
   | 'wiringDoc'
   | 'reflection'
   | 'gameAnalysis'
-  | 'autonomousPlan';
+  | 'autonomousPlan'
+  /** Un partido de torneo (modo torneo): va a la página de registro del torneo. */
+  | 'tournamentLog';
 
 export type EntryMark = 'normal' | 'milestone' | 'printed3d' | 'bugFound' | 'keyDecision' | 'change' | 'inspiration' | 'tournament';
 
@@ -99,13 +191,103 @@ export interface Trial {
   note?: string;
 }
 
+/**
+ * Anotaciones sobre una foto: se guardan como datos (no se queman en la
+ * imagen) para poder editarlas. Las coordenadas son relativas a la imagen
+ * (0 a 1; x hacia la derecha, y hacia abajo).
+ */
+export interface PhotoLabel {
+  id: string;
+  type: 'label';
+  /** "A", "B"… (se asigna sola). */
+  letter: string;
+  /** Dónde va la letra. */
+  x: number;
+  y: number;
+  /** Punta de la flecha de la etiqueta, si apunta a algo. */
+  tx?: number;
+  ty?: number;
+  /** Qué es. */
+  what?: string;
+  /** Qué hace. */
+  does?: string;
+  /** Por qué está ahí. */
+  why?: string;
+}
+
+export interface PhotoArrow {
+  id: string;
+  type: 'arrow';
+  x: number;
+  y: number;
+  tx: number;
+  ty: number;
+}
+
+export type PhotoAnnotation = PhotoLabel | PhotoArrow;
+
 export type EntryElement =
-  | { id: string; type: 'photo'; photoId: string; caption?: string; takenAt?: IsoDateTime }
+  | {
+      id: string;
+      type: 'photo';
+      photoId: string;
+      caption?: string;
+      takenAt?: IsoDateTime;
+      /** Flechas y etiquetas (opcional; las entradas viejas no lo traen). */
+      annotations?: PhotoAnnotation[];
+      /** Boceto dibujado en la app (no una foto de cámara). */
+      sketch?: boolean;
+    }
   | { id: string; type: 'text'; text: string }
   | { id: string; type: 'link'; url: string; title?: string }
   | { id: string; type: 'list'; items: string[] }
   | { id: string; type: 'table'; header: string[]; rows: string[][] }
-  | { id: string; type: 'trials'; trials: Trial[] };
+  | { id: string; type: 'trials'; trials: Trial[] }
+  | MatchElement
+  | RouteElement;
+
+/** Un paso de la ruta del autónomo: un punto sobre el mapa del campo (0 a 1) y lo que pasa ahí. */
+export interface RoutePoint {
+  id: string;
+  x: number;
+  y: number;
+  action?: string;
+  expected?: string;
+  points?: string;
+}
+
+/** Ruta del autónomo dibujada sobre el mapa del campo de la plantilla: puntos numerados en orden. */
+export interface RouteElement {
+  id: string;
+  type: 'route';
+  points: RoutePoint[];
+}
+
+export const MAX_ROUTE_POINTS = 40;
+
+/** Secciones con registro de cambios (a donde puede ir lo que "se ajustó"). */
+export type ChangeSection = 'mechanics' | 'coding' | 'wiring';
+
+/** Un partido de torneo, rápido de llenar entre partidos. Todo es opcional salvo el nombre. */
+export interface MatchElement {
+  id: string;
+  type: 'match';
+  /** Número o nombre del partido: "Q12", "Semifinal 2-1". */
+  match: string;
+  alliance?: 'red' | 'blue';
+  partner?: string;
+  opponents?: string;
+  ourScore?: string;
+  theirScore?: string;
+  result?: 'win' | 'loss' | 'tie';
+  failed?: string;
+  adjusted?: string;
+  /** Si lo que se ajustó va al registro de cambios, de qué sección. */
+  adjustedSection?: ChangeSection;
+}
+
+export const MATCH_RESULT_LABELS: Record<NonNullable<MatchElement['result']>, string> = { win: 'Ganamos', loss: 'Perdimos', tie: 'Empate' };
+export const ALLIANCE_LABELS: Record<NonNullable<MatchElement['alliance']>, string> = { red: 'Roja', blue: 'Azul' };
 
 export type ElementType = EntryElement['type'];
 
@@ -158,6 +340,7 @@ export const ENTRY_KIND_LABELS: Record<EntryKind, string> = {
   reflection: 'Reflexión',
   gameAnalysis: 'Análisis del juego',
   autonomousPlan: 'Autónomo',
+  tournamentLog: 'Partido de torneo',
 };
 
 export const ENTRY_KINDS = Object.keys(ENTRY_KIND_LABELS) as EntryKind[];
@@ -176,6 +359,18 @@ export const MARK_LABELS: Record<EntryMark, string> = {
 export const ENTRY_MARKS = Object.keys(MARK_LABELS) as EntryMark[];
 
 // --- Utilidades --------------------------------------------------------------------
+
+/** Letras de etiqueta en orden: A…Z, luego AA, AB… */
+export function labelLetter(i: number): string {
+  const A = 65;
+  return i < 26 ? String.fromCharCode(A + i) : String.fromCharCode(A + Math.floor(i / 26) - 1) + String.fromCharCode(A + (i % 26));
+}
+
+/** La primera letra que no está usada. */
+export function nextLabelLetter(used: Iterable<string>): string {
+  const set = new Set(used);
+  for (let i = 0; ; i++) if (!set.has(labelLetter(i))) return labelLetter(i);
+}
 
 const ID_ALPHABET = '0123456789abcdefghijklmnopqrstuvwxyz';
 

@@ -31,6 +31,12 @@
  * | PUT  /api/sessions/:date/closing       | SessionClosing    | { session, applied }|
  * | GET  /api/template                     | —                 | plantilla .pptx     |
  * | GET  /api/qr                           | —                 | QrResponse          |
+ * | PUT  /api/tasks/:id                    | TaskItem          | PutTaskResponse     |
+ *
+ * Pendientes: gana el de `updatedAt` más reciente (como las entradas). Van en
+ * `StateResponse.tasks` (todos, también con `?date=`). Con `?date=` también
+ * llegan `recentSessions` (para avisar de un cierre que faltó). Los dos campos
+ * son opcionales: un servidor viejo no los manda y la app sigue igual.
  *
  * `/api/qr` solo existe en la versión hospedada (Worker); el servidor local
  * tiene su propia página `/qr`.
@@ -44,6 +50,7 @@
 import {
   ENTRY_KINDS,
   ENTRY_MARKS,
+  MAX_ROUTE_POINTS,
   TEAM_FORMAT,
   initialsOf,
   slugify,
@@ -51,6 +58,7 @@ import {
   type CaptureSession,
   type Entry,
   type SessionClosing,
+  type TaskItem,
   type TeamConfig,
 } from './model.ts';
 import { SECTIONS } from './notebook.ts';
@@ -77,6 +85,22 @@ export interface StateResponse {
   access?: AccessLevel;
   /** `true` en la versión hospedada (HTTPS): la app instala su service worker. */
   hosted?: boolean;
+  /** Pendientes entre sesiones (todos; son pocos). Los servidores viejos no lo mandan. */
+  tasks?: TaskItem[];
+  /**
+   * Solo con `?date=`: las sesiones de los días anteriores más cercanos (hasta
+   * `RECENT_SESSION_DAYS`), para avisar de una sesión que quedó sin cierre.
+   */
+  recentSessions?: CaptureSession[];
+}
+
+/** Cuántos días hacia atrás se mandan en `recentSessions`. */
+export const RECENT_SESSION_DAYS = 14;
+
+export interface PutTaskResponse {
+  /** `false` si el servidor ya tenía una versión más nueva (se devuelve esa). */
+  applied: boolean;
+  task: TaskItem;
 }
 
 export interface QrResponse {
@@ -118,7 +142,15 @@ export const apiPath = {
   closing: (date: string) => `/api/sessions/${date}/closing`,
   template: () => '/api/template',
   qr: () => '/api/qr',
+  task: (id: string) => `/api/tasks/${encodeURIComponent(id)}`,
 };
+
+/** Fecha `AAAA-MM-DD` de `days` días antes de `date`. */
+export function daysBefore(date: string, days: number): string {
+  const d = new Date(`${date}T12:00:00Z`);
+  d.setUTCDate(d.getUTCDate() - days);
+  return d.toISOString().slice(0, 10);
+}
 
 // --- Mezcla -------------------------------------------------------------------
 
@@ -215,7 +247,9 @@ function checkElement(el: unknown): string | undefined {
   if (!isObj(el) || !isStr(el.id)) return 'elemento inválido';
   switch (el.type) {
     case 'photo':
-      return isStr(el.photoId) && ID_PATTERN.test(el.photoId) && optStr(el.caption) && optStr(el.takenAt) ? undefined : 'foto inválida';
+      if (!(isStr(el.photoId) && ID_PATTERN.test(el.photoId) && optStr(el.caption) && optStr(el.takenAt))) return 'foto inválida';
+      if (el.sketch !== undefined && typeof el.sketch !== 'boolean') return 'foto inválida';
+      return el.annotations === undefined ? undefined : checkAnnotations(el.annotations);
     case 'text':
       return isStr(el.text) ? undefined : 'texto inválido';
     case 'link':
@@ -228,9 +262,45 @@ function checkElement(el: unknown): string | undefined {
       return Array.isArray(el.trials) && el.trials.every((t) => isObj(t) && typeof t.ok === 'boolean' && isStr(t.at) && optStr(t.note))
         ? undefined
         : 'contador de pruebas inválido';
+    case 'route':
+      if (!Array.isArray(el.points) || el.points.length > MAX_ROUTE_POINTS) return 'ruta inválida';
+      for (const p of el.points) {
+        if (!isObj(p) || !isStr(p.id) || !isUnit(p.x) || !isUnit(p.y) || !optNote(p.action) || !optNote(p.expected) || !optNote(p.points)) return 'punto de ruta inválido';
+      }
+      return undefined;
+    case 'match': {
+      const texts = [el.partner, el.opponents, el.ourScore, el.theirScore, el.failed, el.adjusted];
+      if (!isStr(el.match) || el.match.length > MAX_NAME_LENGTH || !texts.every(optNote)) return 'partido inválido';
+      if (el.alliance !== undefined && el.alliance !== 'red' && el.alliance !== 'blue') return 'alianza inválida';
+      if (el.result !== undefined && !['win', 'loss', 'tie'].includes(el.result as string)) return 'resultado inválido';
+      if (el.adjustedSection !== undefined && !['mechanics', 'coding', 'wiring'].includes(el.adjustedSection as string)) return 'sección del ajuste inválida';
+      return undefined;
+    }
     default:
       return `tipo de elemento desconocido: ${String(el.type)}`;
   }
+}
+
+export const MAX_ANNOTATIONS = 60;
+const MAX_NOTE_LENGTH = 2000;
+
+/** Número entre 0 y 1 (coordenada relativa a la imagen). */
+export const isUnit = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v) && v >= 0 && v <= 1;
+const optNote = (v: unknown) => v === undefined || (isStr(v) && v.length <= MAX_NOTE_LENGTH);
+
+export function checkAnnotations(list: unknown): string | undefined {
+  if (!Array.isArray(list) || list.length > MAX_ANNOTATIONS) return 'anotaciones inválidas';
+  for (const a of list) {
+    if (!isObj(a) || !isStr(a.id) || !isUnit(a.x) || !isUnit(a.y)) return 'anotación inválida';
+    if (a.type === 'arrow') {
+      if (!isUnit(a.tx) || !isUnit(a.ty)) return 'flecha inválida';
+    } else if (a.type === 'label') {
+      if (!isStr(a.letter) || a.letter.length < 1 || a.letter.length > 3) return 'etiqueta inválida';
+      if ((a.tx !== undefined || a.ty !== undefined) && !(isUnit(a.tx) && isUnit(a.ty))) return 'etiqueta inválida';
+      if (!optNote(a.what) || !optNote(a.does) || !optNote(a.why)) return 'etiqueta inválida';
+    } else return 'anotación inválida';
+  }
+  return undefined;
 }
 
 export function checkAttendance(v: unknown): string | undefined {
@@ -241,6 +311,21 @@ export function checkAttendance(v: unknown): string | undefined {
 export function checkClosing(v: unknown): string | undefined {
   if (!isObj(v) || !isIsoDateTime(v.updatedAt)) return 'cierre inválido';
   if (!optStr(v.whatWeDid) || !optStr(v.whatFailed) || !optStr(v.whatsNext) || !optStr(v.by)) return 'cierre inválido';
+  return undefined;
+}
+
+export const MAX_TASK_LENGTH = 500;
+
+export function checkTask(v: unknown): string | undefined {
+  if (!isObj(v) || !isStr(v.id) || !ID_PATTERN.test(v.id)) return 'pendiente inválido';
+  if (!isStr(v.text) || v.text.trim() === '' || v.text.length > MAX_TASK_LENGTH) return 'el pendiente necesita un texto (máximo 500 caracteres)';
+  if (!isValidDate(v.fromDate)) return 'fromDate inválida';
+  if (v.source !== 'closing' && v.source !== 'manual') return 'source debe ser "closing" o "manual"';
+  if (!isIsoDateTime(v.createdAt) || !isIsoDateTime(v.updatedAt)) return 'createdAt y updatedAt deben ser fechas ISO en UTC';
+  if (!optStr(v.createdBy)) return 'pendiente inválido';
+  if (v.done !== undefined && !(isObj(v.done) && isIsoDateTime(v.done.at) && optStr(v.done.by))) return 'done inválido';
+  if (v.snoozedUntil !== undefined && !isValidDate(v.snoozedUntil)) return 'snoozedUntil inválida';
+  if (v.deleted !== undefined && typeof v.deleted !== 'boolean') return 'deleted debe ser true o false';
   return undefined;
 }
 
@@ -257,6 +342,15 @@ export function checkTeam(v: unknown): string | undefined {
   if (!Array.isArray(v.robots)) return 'falta la lista de robots';
   for (const r of v.robots) {
     if (!isObj(r) || !isStr(r.id) || !isStr(r.name) || !isStrArr(r.subsystems)) return 'robot inválido';
+    for (const k of ['ports', 'controller'] as const) {
+      const hist = r[k];
+      if (hist === undefined) continue;
+      if (!Array.isArray(hist) || hist.length > 200) return `historial de ${k} inválido`;
+      for (const v of hist) {
+        if (!isObj(v) || !isValidDate(v.date) || !isIsoDateTime(v.savedAt) || !optStr(v.by) || !isObj(v.slots)) return `versión de ${k} inválida`;
+        if (!Object.values(v.slots).every((s) => isStr(s) && s.length <= MAX_NAME_LENGTH)) return `versión de ${k} inválida`;
+      }
+    }
   }
   return undefined;
 }

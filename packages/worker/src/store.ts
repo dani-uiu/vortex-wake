@@ -16,6 +16,8 @@ import {
   mergeAttendance,
   mergeClosing,
   mergeEntry,
+  mergeTask,
+  type TaskItem,
   type Attendance,
   type CaptureSession,
   type Entry,
@@ -141,6 +143,28 @@ export class D1Store {
     throw new ConflictError('demasiados cambios al mismo tiempo; intenta de nuevo');
   }
 
+  // --- pendientes -----------------------------------------------------------------
+
+  async putTask(task: TaskItem): Promise<{ applied: boolean; task: TaskItem }> {
+    for (let i = 0; i < MAX_TRIES; i++) {
+      await backoff(i);
+      const row = await this.db.prepare('SELECT json, version FROM tasks WHERE id = ?1').bind(task.id).first<Row>();
+      const r = mergeTask(row ? (JSON.parse(row.json) as TaskItem) : undefined, task);
+      if (!r.applied) return r;
+      const json = JSON.stringify(task);
+      const res = row
+        ? await this.db.prepare('UPDATE tasks SET json = ?1, updated_at = ?2, version = version + 1 WHERE id = ?3 AND version = ?4').bind(json, task.updatedAt, task.id, row.version).run()
+        : await this.db.prepare('INSERT INTO tasks (id, updated_at, json, version) VALUES (?1, ?2, ?3, 1) ON CONFLICT (id) DO NOTHING').bind(task.id, task.updatedAt, json).run();
+      if (res.meta.changes === 1) return r;
+    }
+    throw new ConflictError('demasiados cambios al mismo tiempo; intenta de nuevo');
+  }
+
+  async tasksJson(): Promise<string> {
+    const { results } = await this.db.prepare('SELECT json FROM tasks').all<{ json: string }>();
+    return `[${results.map((r) => r.json).join(',')}]`;
+  }
+
   // --- estado ---------------------------------------------------------------------
 
   /**
@@ -154,6 +178,12 @@ export class D1Store {
       ? this.db.prepare('SELECT json FROM sessions WHERE date = ?1 ORDER BY date').bind(date)
       : this.db.prepare('SELECT json FROM sessions ORDER BY date');
     const { results } = await q.all<{ json: string }>();
+    return `[${results.map((r) => r.json).join(',')}]`;
+  }
+
+  /** Sesiones con fecha en [from, to). */
+  async sessionsBetweenJson(from: string, to: string): Promise<string> {
+    const { results } = await this.db.prepare('SELECT json FROM sessions WHERE date >= ?1 AND date < ?2 ORDER BY date').bind(from, to).all<{ json: string }>();
     return `[${results.map((r) => r.json).join(',')}]`;
   }
 

@@ -19,19 +19,26 @@ import {
   ENTRY_KIND_LABELS,
   ENTRY_MARKS,
   MARK_LABELS,
+  newId,
   PAGE_TYPES,
   SECTION_LABELS,
   type Entry,
   type EntryElement,
   type EntryMark,
+  type MatchElement,
   type SectionId,
 } from '@vortex-wake/shared';
 import type { App } from '../app.ts';
 import type { Classification } from '../app.ts';
 import { WHAT_OPTIONS, applyWhat, exactLabel, setTarget, targetLabel, whatOf } from '../classify.ts';
 import { autosize, debounce, h, icon, openSheet, setChildren, timeOf, toast } from '../ui.ts';
+import { openAnnotator } from './annotate.ts';
+import { fieldView, openRouteEditor } from './route.ts';
+import { openSketch } from './sketch.ts';
 import { photoButton, statusPill } from './common.ts';
-import { newElement } from './home.ts';
+import { newElement, newMatch } from './home.ts';
+import { dictationFor } from '../dictation.ts';
+import { annotationsToMarks, markedImage } from './marks.ts';
 
 const SECTIONS: SectionId[] = ['mechanics', 'coding', 'wiring', 'strategy'];
 
@@ -120,6 +127,8 @@ export function renderEditor(root: HTMLElement, app: App, id: string, onDone: ()
         { class: 'sheet-list' },
         photoButton(desk ? 'Foto (cámara)' : 'Tomar foto', { camera: true, cls: 'sheet-item', testid: 'editor-photo', onFiles: (f) => (sheet.close(), void addPhotos(f)) }),
         photoButton(desk ? 'Fotos de la computadora' : 'Fotos de la galería', { camera: false, cls: 'sheet-item', onFiles: (f) => (sheet.close(), void addPhotos(f)) }),
+        h('button', { class: 'sheet-item', type: 'button', 'data-add': 'route', onclick: () => (sheet.close(), addRoute()) }, icon('route'), h('span', { text: 'Ruta del autónomo sobre el campo' })),
+        h('button', { class: 'sheet-item', type: 'button', 'data-add': 'sketch', onclick: () => (sheet.close(), openSketch((file) => addPhotos([file], true))) }, icon('sketch'), h('span', { text: 'Boceto con el dedo' })),
         ...addKinds.map(([t, label]) =>
           h('button', { class: 'sheet-item', type: 'button', 'data-add': t, onclick: () => (sheet.close(), addElement(t)) }, icon(t), h('span', { text: label })),
         ),
@@ -160,15 +169,22 @@ export function renderEditor(root: HTMLElement, app: App, id: string, onDone: ()
         desk && nav?.next
           ? h('button', { class: 'btn primary big', type: 'button', 'data-testid': 'editor-save-next', onclick: navTo(nav.next) }, 'Listo, siguiente', icon('down'))
           : h('button', { class: 'btn primary big', type: 'button', onclick: done }, 'Listo'),
+        // Modo torneo: el siguiente partido sin pasar por el inicio.
+        !desk && entry.elements.some((x) => x.type === 'match')
+          ? h('button', { class: 'btn secondary', type: 'button', 'data-testid': 'next-match', onclick: () => {
+              save.flush();
+              void saving.then(() => newMatch(app)).then((nid) => (location.hash = `#/entrada/${nid}`));
+            } }, icon('trophy'), 'Otro partido')
+          : null,
         del,
       ),
     ),
   );
 
-  async function addPhotos(files: File[]) {
+  async function addPhotos(files: File[], sketch = false) {
     save.flush();
     await saving;
-    const saved = await app.addPhotos(files, entry.id);
+    const saved = await app.addPhotos(files, entry.id, { sketch });
     if (saved) entry = structuredClone(saved);
     renderElements();
   }
@@ -179,6 +195,20 @@ export function renderEditor(root: HTMLElement, app: App, id: string, onDone: ()
     renderElements();
     const last = elementsBox.lastElementChild?.querySelector<HTMLElement>('textarea, input');
     last?.focus();
+  }
+
+  /** Una ruta va en un plan de autónomo (Estrategia), si la entrada todavía no tiene tipo. */
+  function addRoute() {
+    const el: Extract<EntryElement, { type: 'route' }> = { id: newId(), type: 'route', points: [] };
+    entry.elements.push(el);
+    if (!entry.kind) {
+      entry.kind = 'autonomousPlan';
+      entry.section = 'strategy';
+    }
+    saveNow();
+    renderElements();
+    renderClass();
+    openRoute(el);
   }
 
   function removeElement(elId: string) {
@@ -216,7 +246,9 @@ export function renderEditor(root: HTMLElement, app: App, id: string, onDone: ()
       (el.type === 'text' && !el.text.trim()) ||
       (el.type === 'link' && !el.url.trim()) ||
       (el.type === 'list' && el.items.length === 0) ||
-      (el.type === 'trials' && el.trials.length === 0);
+      (el.type === 'trials' && el.trials.length === 0) ||
+      (el.type === 'match' && !el.match.trim() && !el.failed && !el.adjusted) ||
+      (el.type === 'route' && el.points.length === 0);
     if (empty || confirm('¿Quitar este elemento?')) removeElement(el.id);
   }
 
@@ -234,18 +266,25 @@ export function renderEditor(root: HTMLElement, app: App, id: string, onDone: ()
   function elementEditor(el: EntryElement): HTMLElement {
     switch (el.type) {
       case 'photo': {
-        const img = h('img', { alt: el.caption ?? 'Foto', class: 'photo' });
-        void app.photoUrl(el.photoId).then((u) => (img.src = u));
+        const pic = markedImage(app.photoUrl(el.photoId), annotationsToMarks(el.annotations), { cls: 'photo', fit: 'contain', alt: el.caption ?? 'Foto' });
         const cap = h('input', { type: 'text', placeholder: 'Pie de foto (opcional)', value: el.caption ?? '' });
         cap.addEventListener('input', () => {
           el.caption = cap.value;
           save();
         });
         cap.addEventListener('blur', () => save.flush());
-        return shell(el, el.takenAt ? `Foto · ${timeOf(el.takenAt)}` : 'Foto', [img, cap]);
+        const n = el.annotations?.filter((a) => a.type === 'label').length ?? 0;
+        const annotate = h(
+          'button',
+          { class: 'chip-btn', type: 'button', 'data-testid': 'annotate-photo', onclick: () => void openPhotoAnnotator(el) },
+          icon('pen'),
+          el.annotations && el.annotations.length > 0 ? `Editar etiquetas${n > 0 ? ` (${n})` : ''}` : 'Etiquetas y flechas',
+        );
+        const title = el.sketch ? 'Boceto' : el.takenAt ? `Foto · ${timeOf(el.takenAt)}` : 'Foto';
+        return shell(el, title, [pic, h('div', { class: 'row wrap' }, annotate), cap]);
       }
       case 'text':
-        return shell(el, 'Texto', [textArea(el.text, '¿Qué hicieron? ¿Qué vieron?', (v) => (el.text = v), 'text-input')]);
+        return shell(el, 'Texto', [dictationFor(textArea(el.text, '¿Qué hicieron? ¿Qué vieron?', (v) => (el.text = v), 'text-input'))]);
       case 'link': {
         const url = h('input', { type: 'url', inputmode: 'url', placeholder: 'https://… (commit, foro, video)', value: el.url, autocomplete: 'off', 'data-testid': 'link-url' });
         const title = h('input', { type: 'text', placeholder: 'De qué es (opcional)', value: el.title ?? '' });
@@ -257,13 +296,167 @@ export function renderEditor(root: HTMLElement, app: App, id: string, onDone: ()
       }
       case 'list':
         return shell(el, 'Lista', [
-          textArea(el.items.join('\n'), 'Un elemento por renglón', (v) => (el.items = v.split('\n').map((s) => s.trimEnd()).filter((s, i, a) => s || i < a.length - 1))),
+          dictationFor(textArea(el.items.join('\n'), 'Un elemento por renglón', (v) => (el.items = v.split('\n').map((s) => s.trimEnd()).filter((s, i, a) => s || i < a.length - 1)))),
         ]);
       case 'table':
         return shell(el, 'Tabla', [tableEditor(el)]);
       case 'trials':
         return shell(el, 'Prueba en vivo', [trialsEditor(el)]);
+      case 'match':
+        return shell(el, 'Partido de torneo', [matchEditor(el)]);
+      case 'route': {
+        const view = fieldView(el.points);
+        const list = el.points.length > 0
+          ? h('ol', {}, el.points.map((p) => h('li', { text: [p.action, p.expected, p.points ? `${p.points} pts` : ''].filter((s) => s?.trim()).join(' · ') || 'Sin descripción' })))
+          : h('p', { class: 'muted small', text: 'Todavía sin pasos.' });
+        const btn = h('button', { class: 'chip-btn', type: 'button', 'data-testid': 'draw-route', onclick: () => openRoute(el) }, icon('route'), el.points.length > 0 ? 'Editar la ruta' : 'Dibujar la ruta');
+        return shell(el, 'Ruta del autónomo', [h('div', { class: 'route-preview' }, view.el, h('div', { class: 'row wrap' }, btn), list)]);
+      }
     }
+  }
+
+  function openRoute(el: Extract<EntryElement, { type: 'route' }>) {
+    openRouteEditor({
+      points: el.points,
+      onChange: (points) => {
+        const target = entry.elements.find((x) => x.id === el.id);
+        if (target && target.type === 'route') target.points = points;
+        save();
+      },
+      onClose: () => {
+        save.flush();
+        renderElements();
+      },
+    });
+  }
+
+  /** Partido: todo en una pantalla, para llenarlo entre partidos. */
+  function matchEditor(el: MatchElement): HTMLElement {
+    const box = h('div', { class: 'match' });
+    const text = (key: 'match' | 'partner' | 'opponents' | 'ourScore' | 'theirScore', placeholder: string, label: string, numeric = false) => {
+      const i = h('input', { type: 'text', value: el[key] ?? '', placeholder, 'aria-label': label, 'data-field': key, autocomplete: 'off', ...(numeric ? { inputmode: 'numeric' } : {}) });
+      i.addEventListener('input', () => {
+        const v = i.value;
+        if (key === 'match') el.match = v;
+        else if (v.trim()) el[key] = v;
+        else delete el[key];
+        if ((key === 'ourScore' || key === 'theirScore') && !resultTouched) autoResult();
+        save();
+      });
+      i.addEventListener('blur', () => save.flush());
+      return i;
+    };
+    let resultTouched = el.result !== undefined;
+    const autoResult = () => {
+      const a = Number(el.ourScore);
+      const b = Number(el.theirScore);
+      if (el.ourScore?.trim() && el.theirScore?.trim() && Number.isFinite(a) && Number.isFinite(b)) el.result = a > b ? 'win' : a < b ? 'loss' : 'tie';
+      renderSegs();
+    };
+    const long = (key: 'failed' | 'adjusted', placeholder: string, label: string) =>
+      h('label', { class: 'q' }, h('span', { class: 'field-label', text: label }), dictationFor(textArea(el[key] ?? '', placeholder, (v) => {
+        if (v.trim()) el[key] = v;
+        else delete el[key];
+        if (key === 'adjusted') renderSegs();
+      }, `match-${key}`)));
+    const segs = h('div', { class: 'stack-tight' });
+    const seg = <T extends string>(label: string, options: [T, string][], current: T | undefined, set: (v: T | undefined) => void, testid: string) =>
+      h(
+        'div',
+        { class: 'seg match-seg', role: 'group', 'aria-label': label, 'data-testid': testid },
+        options.map(([v, l]) =>
+          h('button', { class: `seg-btn ${current === v ? 'on' : ''}`, type: 'button', 'aria-pressed': String(current === v), 'data-value': v, onclick: () => (set(current === v ? undefined : v), saveNow(), renderSegs()) }, l),
+        ),
+      );
+    function renderSegs() {
+      setChildren(
+        segs,
+        h('span', { class: 'field-label', text: 'Resultado' }),
+        seg('Resultado', [['win', 'Ganamos'], ['loss', 'Perdimos'], ['tie', 'Empate']], el.result, (v) => {
+          resultTouched = true;
+          if (v) el.result = v;
+          else delete el.result;
+        }, 'match-result'),
+      );
+      setChildren(
+        changeBox,
+        el.adjusted?.trim()
+          ? h(
+              'div',
+              { class: 'stack-tight' },
+              h('span', { class: 'field-label', text: '¿Va al registro de cambios?' }),
+              seg('Registro de cambios', [['mechanics', 'Mecánica'], ['coding', 'Programación'], ['wiring', 'Cableado']], el.adjustedSection, (v) => {
+                if (v) el.adjustedSection = v;
+                else delete el.adjustedSection;
+              }, 'match-change'),
+            )
+          : null,
+      );
+    }
+    const changeBox = h('div');
+    renderSegs();
+    box.append(
+      h('div', { class: 'match-row' }, h('label', { class: 'q grow' }, h('span', { class: 'field-label', text: 'Partido' }), text('match', 'Q12, Semifinal 2…', 'Número o nombre del partido'))),
+      h(
+        'div',
+        { class: 'stack-tight' },
+        h('span', { class: 'field-label', text: 'Alianza' }),
+        seg('Alianza', [['red', 'Roja'], ['blue', 'Azul']], el.alliance, (v) => {
+          if (v) el.alliance = v;
+          else delete el.alliance;
+        }, 'match-alliance'),
+      ),
+      h(
+        'div',
+        { class: 'match-row' },
+        h('label', { class: 'q' }, h('span', { class: 'field-label', text: 'Aliado' }), text('partner', 'Equipo', 'Equipo aliado')),
+        h('label', { class: 'q' }, h('span', { class: 'field-label', text: 'Rivales' }), text('opponents', 'Equipos', 'Equipos rivales')),
+      ),
+      h(
+        'div',
+        { class: 'stack-tight' },
+        h('span', { class: 'field-label', text: 'Marcador (nosotros – ellos)' }),
+        h('div', { class: 'match-row score' }, text('ourScore', 'Nosotros', 'Puntos de nuestra alianza', true), h('span', { class: 'muted', text: '–' }), text('theirScore', 'Ellos', 'Puntos de la otra alianza', true)),
+      ),
+      segs,
+      long('failed', '¿Qué falló en este partido?', 'Qué falló'),
+      long('adjusted', '¿Qué ajustamos antes del siguiente?', 'Qué ajustamos'),
+      changeBox,
+    );
+    // El selector de alianza también se repinta con renderSegs (solo el de resultado y cambios cambian con el texto).
+    box.querySelectorAll<HTMLElement>('[data-testid=match-alliance] .seg-btn').forEach((b) =>
+      b.addEventListener('click', () => {
+        for (const x of box.querySelectorAll<HTMLElement>('[data-testid=match-alliance] .seg-btn')) {
+          const on = x.dataset.value === el.alliance;
+          x.classList.toggle('on', on);
+          x.setAttribute('aria-pressed', String(on));
+        }
+      }),
+    );
+    return box;
+  }
+
+  async function openPhotoAnnotator(el: Extract<EntryElement, { type: 'photo' }>) {
+    const src = await app.photoUrl(el.photoId);
+    const otherLetters = () =>
+      entry.elements.flatMap((x) => (x.type === 'photo' && x.id !== el.id ? (x.annotations ?? []).flatMap((a) => (a.type === 'label' ? [a.letter] : [])) : []));
+    openAnnotator({
+      src,
+      annotations: el.annotations ?? [],
+      otherLetters,
+      wiring: entry.kind === 'wiringDoc',
+      onChange: (list) => {
+        const target = entry.elements.find((x) => x.id === el.id);
+        if (!target || target.type !== 'photo') return;
+        if (list.length > 0) target.annotations = list;
+        else delete target.annotations;
+        save();
+      },
+      onClose: () => {
+        save.flush();
+        renderElements();
+      },
+    });
   }
 
   function tableEditor(el: Extract<EntryElement, { type: 'table' }>): HTMLElement {
