@@ -11,6 +11,7 @@ import {
   NOTEBOOK_VERSION,
   PAGE_TYPES,
   SECTIONS,
+  TEMPLATE_FIELD_IMAGE,
   findPageRefs,
   type NotebookDocument,
   type PageType,
@@ -287,11 +288,26 @@ function validateArea(value: unknown, path: string, add: Add, collectRefs: (p: s
       const ip = `${path}.images[${i}]`;
       if (!isObject(img)) return add(ip, 'debe ser un objeto { src, caption }');
       if (typeof img.src !== 'string' || img.src.trim() === '') add(`${ip}.src`, 'falta la ruta de la imagen');
-      else if (!IMAGE_RE.test(img.src)) add(`${ip}.src`, 'solo se aceptan imágenes PNG o JPEG');
+      else if (img.src !== TEMPLATE_FIELD_IMAGE && !IMAGE_RE.test(img.src)) add(`${ip}.src`, 'solo se aceptan imágenes PNG o JPEG');
       optionalString(img, 'caption', ip, add);
       collectRefs(`${ip}.caption`, img.caption);
+      if (img.marks !== undefined) validateMarks(img.marks, `${ip}.marks`, add);
     });
   }
+}
+
+function validateMarks(value: unknown, path: string, add: Add) {
+  if (!Array.isArray(value)) return add(path, 'debe ser una lista');
+  const unit = (v: unknown) => typeof v === 'number' && Number.isFinite(v) && v >= 0 && v <= 1;
+  value.forEach((m, i) => {
+    const mp = `${path}[${i}]`;
+    if (!isObject(m)) return add(mp, 'debe ser un objeto { kind, x, y }');
+    if (m.kind !== 'label' && m.kind !== 'arrow') add(`${mp}.kind`, 'debe ser "label" o "arrow"');
+    if (!unit(m.x) || !unit(m.y)) add(mp, 'x e y deben ser números entre 0 y 1');
+    const hasTarget = m.tx !== undefined || m.ty !== undefined;
+    if ((m.kind === 'arrow' || hasTarget) && (!unit(m.tx) || !unit(m.ty))) add(mp, 'tx y ty deben ser números entre 0 y 1');
+    optionalString(m, 'text', mp, add);
+  });
 }
 
 function validateTable(

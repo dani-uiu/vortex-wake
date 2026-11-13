@@ -56,9 +56,32 @@ export interface NotebookSession {
 }
 
 export interface ImageRef {
-  /** Ruta del archivo PNG o JPEG, relativa al documento. */
+  /**
+   * Ruta del archivo PNG o JPEG, relativa al documento. `template:field` es
+   * el mapa del campo que trae la plantilla (lo pone el generador).
+   */
   src: string;
   caption?: string;
+  /** Flechas y etiquetas que el generador dibuja encima, como formas de PowerPoint. */
+  marks?: ImageMark[];
+}
+
+/** Imagen especial: el mapa del campo de la plantilla (página "Campo… en blanco"). */
+export const TEMPLATE_FIELD_IMAGE = 'template:field';
+
+/**
+ * Marca sobre una imagen, en coordenadas relativas (0 a 1).
+ * - `label`: un círculo con texto ("A", "3") en (x, y); si trae (tx, ty), una
+ *   flecha del círculo a ese punto.
+ * - `arrow`: una flecha de (x, y) a (tx, ty).
+ */
+export interface ImageMark {
+  kind: 'label' | 'arrow';
+  text?: string;
+  x: number;
+  y: number;
+  tx?: number;
+  ty?: number;
 }
 
 /** Contenido de un recuadro: texto (párrafos separados por `\n`) y fotos. */

@@ -30,8 +30,10 @@ import type { App } from '../app.ts';
 import type { Classification } from '../app.ts';
 import { WHAT_OPTIONS, applyWhat, exactLabel, setTarget, targetLabel, whatOf } from '../classify.ts';
 import { autosize, debounce, h, icon, openSheet, setChildren, timeOf, toast } from '../ui.ts';
+import { openAnnotator } from './annotate.ts';
 import { photoButton, statusPill } from './common.ts';
 import { newElement } from './home.ts';
+import { annotationsToMarks, markedImage } from './marks.ts';
 
 const SECTIONS: SectionId[] = ['mechanics', 'coding', 'wiring', 'strategy'];
 
@@ -234,15 +236,22 @@ export function renderEditor(root: HTMLElement, app: App, id: string, onDone: ()
   function elementEditor(el: EntryElement): HTMLElement {
     switch (el.type) {
       case 'photo': {
-        const img = h('img', { alt: el.caption ?? 'Foto', class: 'photo' });
-        void app.photoUrl(el.photoId).then((u) => (img.src = u));
+        const pic = markedImage(app.photoUrl(el.photoId), annotationsToMarks(el.annotations), { cls: 'photo', fit: 'contain', alt: el.caption ?? 'Foto' });
         const cap = h('input', { type: 'text', placeholder: 'Pie de foto (opcional)', value: el.caption ?? '' });
         cap.addEventListener('input', () => {
           el.caption = cap.value;
           save();
         });
         cap.addEventListener('blur', () => save.flush());
-        return shell(el, el.takenAt ? `Foto · ${timeOf(el.takenAt)}` : 'Foto', [img, cap]);
+        const n = el.annotations?.filter((a) => a.type === 'label').length ?? 0;
+        const annotate = h(
+          'button',
+          { class: 'chip-btn', type: 'button', 'data-testid': 'annotate-photo', onclick: () => void openPhotoAnnotator(el) },
+          icon('pen'),
+          el.annotations && el.annotations.length > 0 ? `Editar etiquetas${n > 0 ? ` (${n})` : ''}` : 'Etiquetas y flechas',
+        );
+        const title = el.sketch ? 'Boceto' : el.takenAt ? `Foto · ${timeOf(el.takenAt)}` : 'Foto';
+        return shell(el, title, [pic, h('div', { class: 'row wrap' }, annotate), cap]);
       }
       case 'text':
         return shell(el, 'Texto', [textArea(el.text, '¿Qué hicieron? ¿Qué vieron?', (v) => (el.text = v), 'text-input')]);
@@ -264,6 +273,29 @@ export function renderEditor(root: HTMLElement, app: App, id: string, onDone: ()
       case 'trials':
         return shell(el, 'Prueba en vivo', [trialsEditor(el)]);
     }
+  }
+
+  async function openPhotoAnnotator(el: Extract<EntryElement, { type: 'photo' }>) {
+    const src = await app.photoUrl(el.photoId);
+    const otherLetters = () =>
+      entry.elements.flatMap((x) => (x.type === 'photo' && x.id !== el.id ? (x.annotations ?? []).flatMap((a) => (a.type === 'label' ? [a.letter] : [])) : []));
+    openAnnotator({
+      src,
+      annotations: el.annotations ?? [],
+      otherLetters,
+      wiring: entry.kind === 'wiringDoc',
+      onChange: (list) => {
+        const target = entry.elements.find((x) => x.id === el.id);
+        if (!target || target.type !== 'photo') return;
+        if (list.length > 0) target.annotations = list;
+        else delete target.annotations;
+        save();
+      },
+      onClose: () => {
+        save.flush();
+        renderElements();
+      },
+    });
   }
 
   function tableEditor(el: Extract<EntryElement, { type: 'table' }>): HTMLElement {

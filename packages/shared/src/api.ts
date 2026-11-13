@@ -215,7 +215,9 @@ function checkElement(el: unknown): string | undefined {
   if (!isObj(el) || !isStr(el.id)) return 'elemento inválido';
   switch (el.type) {
     case 'photo':
-      return isStr(el.photoId) && ID_PATTERN.test(el.photoId) && optStr(el.caption) && optStr(el.takenAt) ? undefined : 'foto inválida';
+      if (!(isStr(el.photoId) && ID_PATTERN.test(el.photoId) && optStr(el.caption) && optStr(el.takenAt))) return 'foto inválida';
+      if (el.sketch !== undefined && typeof el.sketch !== 'boolean') return 'foto inválida';
+      return el.annotations === undefined ? undefined : checkAnnotations(el.annotations);
     case 'text':
       return isStr(el.text) ? undefined : 'texto inválido';
     case 'link':
@@ -231,6 +233,28 @@ function checkElement(el: unknown): string | undefined {
     default:
       return `tipo de elemento desconocido: ${String(el.type)}`;
   }
+}
+
+export const MAX_ANNOTATIONS = 60;
+const MAX_NOTE_LENGTH = 2000;
+
+/** Número entre 0 y 1 (coordenada relativa a la imagen). */
+export const isUnit = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v) && v >= 0 && v <= 1;
+const optNote = (v: unknown) => v === undefined || (isStr(v) && v.length <= MAX_NOTE_LENGTH);
+
+export function checkAnnotations(list: unknown): string | undefined {
+  if (!Array.isArray(list) || list.length > MAX_ANNOTATIONS) return 'anotaciones inválidas';
+  for (const a of list) {
+    if (!isObj(a) || !isStr(a.id) || !isUnit(a.x) || !isUnit(a.y)) return 'anotación inválida';
+    if (a.type === 'arrow') {
+      if (!isUnit(a.tx) || !isUnit(a.ty)) return 'flecha inválida';
+    } else if (a.type === 'label') {
+      if (!isStr(a.letter) || a.letter.length < 1 || a.letter.length > 3) return 'etiqueta inválida';
+      if ((a.tx !== undefined || a.ty !== undefined) && !(isUnit(a.tx) && isUnit(a.ty))) return 'etiqueta inválida';
+      if (!optNote(a.what) || !optNote(a.does) || !optNote(a.why)) return 'etiqueta inválida';
+    } else return 'anotación inválida';
+  }
+  return undefined;
 }
 
 export function checkAttendance(v: unknown): string | undefined {

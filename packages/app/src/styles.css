@@ -350,6 +350,31 @@ body:has(dialog[open]) { overflow: hidden; }
 /* Cierre */
 .q { display: block; }
 
+/* Fotos con flechas y etiquetas */
+.marked { position: relative; display: block; }
+.marked > img { display: block; }
+.marks-layer { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.thumb .marked { width: 100%; height: 100%; }
+.thumb .marked img { width: 100%; height: 100%; object-fit: cover; }
+
+/* Hoja a pantalla completa (anotar, dibujar) */
+dialog.sheet.full { max-width: 720px; max-height: 100dvh; height: 100dvh; margin: 0 auto; border-radius: 0; border: 0; }
+dialog.sheet.full .sheet-inner { min-height: 100%; }
+.ann-stage { position: relative; margin: 0 auto; touch-action: none; user-select: none; -webkit-user-select: none; background: var(--surface-2); border-radius: 8px; overflow: hidden; }
+.ann-stage img { display: block; width: 100%; height: 100%; pointer-events: none; -webkit-user-drag: none; }
+.ann-svg { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; cursor: crosshair; }
+.ann-hint { margin: 0; min-height: 2.6em; }
+.ann-tools { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.ann-tools .seg-btn { min-height: 44px; display: inline-flex; align-items: center; gap: 6px; padding: 0 14px; }
+.ann-actions { display: flex; gap: 2px; }
+.ann-actions .icon-btn:disabled { opacity: .35; }
+.ann-labels { display: flex; flex-direction: column; gap: 10px; }
+.ann-label { display: grid; grid-template-columns: 44px minmax(0, 1fr); gap: 10px; align-items: start; padding: 8px; border-radius: 12px; background: var(--surface); }
+.ann-label.on { outline: 2px solid var(--accent); outline-offset: -2px; }
+.ann-letter { width: 44px; height: 44px; border-radius: 50%; border: 2px solid #c8102e; background: #fff; color: #c8102e; font-weight: 800; font-size: 18px; }
+.ann-fields { display: flex; flex-direction: column; gap: 6px; }
+.ann-fields input { min-height: 44px; }
+
 /* Aviso */
 #toast {
   position: fixed; left: 50%; bottom: calc(20px + env(safe-area-inset-bottom)); transform: translate(-50%, 140%);

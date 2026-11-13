@@ -99,8 +99,53 @@ export interface Trial {
   note?: string;
 }
 
+/**
+ * Anotaciones sobre una foto: se guardan como datos (no se queman en la
+ * imagen) para poder editarlas. Las coordenadas son relativas a la imagen
+ * (0 a 1; x hacia la derecha, y hacia abajo).
+ */
+export interface PhotoLabel {
+  id: string;
+  type: 'label';
+  /** "A", "B"… (se asigna sola). */
+  letter: string;
+  /** Dónde va la letra. */
+  x: number;
+  y: number;
+  /** Punta de la flecha de la etiqueta, si apunta a algo. */
+  tx?: number;
+  ty?: number;
+  /** Qué es. */
+  what?: string;
+  /** Qué hace. */
+  does?: string;
+  /** Por qué está ahí. */
+  why?: string;
+}
+
+export interface PhotoArrow {
+  id: string;
+  type: 'arrow';
+  x: number;
+  y: number;
+  tx: number;
+  ty: number;
+}
+
+export type PhotoAnnotation = PhotoLabel | PhotoArrow;
+
 export type EntryElement =
-  | { id: string; type: 'photo'; photoId: string; caption?: string; takenAt?: IsoDateTime }
+  | {
+      id: string;
+      type: 'photo';
+      photoId: string;
+      caption?: string;
+      takenAt?: IsoDateTime;
+      /** Flechas y etiquetas (opcional; las entradas viejas no lo traen). */
+      annotations?: PhotoAnnotation[];
+      /** Boceto dibujado en la app (no una foto de cámara). */
+      sketch?: boolean;
+    }
   | { id: string; type: 'text'; text: string }
   | { id: string; type: 'link'; url: string; title?: string }
   | { id: string; type: 'list'; items: string[] }
@@ -176,6 +221,18 @@ export const MARK_LABELS: Record<EntryMark, string> = {
 export const ENTRY_MARKS = Object.keys(MARK_LABELS) as EntryMark[];
 
 // --- Utilidades --------------------------------------------------------------------
+
+/** Letras de etiqueta en orden: A…Z, luego AA, AB… */
+export function labelLetter(i: number): string {
+  const A = 65;
+  return i < 26 ? String.fromCharCode(A + i) : String.fromCharCode(A + Math.floor(i / 26) - 1) + String.fromCharCode(A + (i % 26));
+}
+
+/** La primera letra que no está usada. */
+export function nextLabelLetter(used: Iterable<string>): string {
+  const set = new Set(used);
+  for (let i = 0; ; i++) if (!set.has(labelLetter(i))) return labelLetter(i);
+}
 
 const ID_ALPHABET = '0123456789abcdefghijklmnopqrstuvwxyz';
 

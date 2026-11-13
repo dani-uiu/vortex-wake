@@ -24,6 +24,8 @@ import {
   type EntryElement,
   type EntryKind,
   type IsoDate,
+  type PhotoAnnotation,
+  type PhotoLabel,
   type SectionId,
   type TeamConfig,
 } from './model.ts';
@@ -35,6 +37,7 @@ import {
   type ChangeRecord,
   type CreditRecord,
   type FieldValue,
+  type ImageMark,
   type ImageRef,
   type Language,
   type NotebookDocument,
@@ -64,6 +67,13 @@ interface FieldPlan {
   photos: string;
   table?: string;
   trials?: string;
+  /**
+   * Tabla que se llena con las etiquetas de las fotos anotadas (letra, qué es,
+   * qué hace, por qué). `mechanism`: 3 columnas ("A: qué es", qué hace, por
+   * qué); `wiring`: 4 (letra, qué es, qué hace, por qué). Sin esta tabla, las
+   * etiquetas van como renglones en el texto.
+   */
+  labels?: { field: string; layout: 'mechanism' | 'wiring' };
 }
 
 /** Campo de cada tipo de página donde va cada cosa. */
@@ -74,9 +84,9 @@ export const FIELD_PLAN: Record<EntryKind, FieldPlan> = {
   buildIteration: { text: 'changes', photos: 'photos', trials: 'testResults' },
   test: { text: 'analysis', photos: 'analysis', table: 'results', trials: 'results' },
   decision: { text: 'decision', photos: 'evidence', table: 'options' },
-  mechanism: { text: 'howItWorks', photos: 'picture', table: 'labels' },
+  mechanism: { text: 'howItWorks', photos: 'picture', table: 'labels', labels: { field: 'labels', layout: 'mechanism' } },
   codeDoc: { text: 'purpose', photos: 'pseudocode', trials: 'relatedTests' },
-  wiringDoc: { text: 'problems', photos: 'diagram', table: 'ports' },
+  wiringDoc: { text: 'problems', photos: 'diagram', table: 'ports', labels: { field: 'ports', layout: 'wiring' } },
   reflection: { text: 'learned', photos: 'learned' },
   gameAnalysis: { text: 'strategy', photos: 'strategy', table: 'priorities' },
   autonomousPlan: { text: 'rationale', photos: 'path', table: 'steps', trials: 'testResults' },
@@ -189,14 +199,23 @@ export function assembleNotebook(input: AssembleInput): AssembleResult {
     const trialTexts: string[] = [];
     const tableColumns = plan.table ? columnsOf(spec, plan.table) : 0;
     let trialNumber = 0;
+    const labelItems: { label: PhotoLabel; photo: number }[] = [];
     for (const e of g.entries) {
       const parts: string[] = [];
       for (const el of e.elements) {
         switch (el.type) {
-          case 'photo':
+          case 'photo': {
             photoIds.add(el.photoId);
-            images.push(el.caption ? { src: photoSrc(el.photoId), caption: el.caption } : { src: photoSrc(el.photoId) });
+            const ref: ImageRef = { src: photoSrc(el.photoId) };
+            if (el.caption) ref.caption = el.caption;
+            const marks = annotationMarks(el.annotations);
+            if (marks.length > 0) ref.marks = marks;
+            images.push(ref);
+            for (const a of el.annotations ?? []) {
+              if (a.type === 'label') labelItems.push({ label: a, photo: images.length });
+            }
             break;
+          }
           case 'table':
             if (plan.table && !(plan.trials === plan.table && hasTrials(g))) {
               for (const r of el.rows) tableRows.push(fitRow(r, tableColumns));
@@ -221,6 +240,11 @@ export function assembleNotebook(input: AssembleInput): AssembleResult {
       }
       if (parts.length > 0) texts.push(parts.join('\n'));
     }
+
+    // Etiquetas de las fotos anotadas → tabla de etiquetas (o texto).
+    const labelRows = labelTableRows(labelItems, plan.labels?.layout);
+    if (plan.labels) tableRows.unshift(...labelRows);
+    else if (labelRows.length > 0) texts.push(labelRows.map((r) => r.filter((c) => c.trim()).join(' · ')).join('\n'));
 
     const fields: Record<string, FieldValue> = {};
     const area = (key: string): AreaContent => {
@@ -319,6 +343,40 @@ export function assembleNotebook(input: AssembleInput): AssembleResult {
   function hasTrials(g: Group): boolean {
     return g.entries.some((e) => e.elements.some((el) => el.type === 'trials' && el.trials.length > 0));
   }
+}
+
+/** Anotaciones de la foto → marcas que el generador dibuja como formas. */
+export function annotationMarks(list: PhotoAnnotation[] | undefined): ImageMark[] {
+  const out: ImageMark[] = [];
+  for (const a of list ?? []) {
+    if (a.type === 'arrow') out.push({ kind: 'arrow', x: a.x, y: a.y, tx: a.tx, ty: a.ty });
+    else {
+      const m: ImageMark = { kind: 'label', text: a.letter, x: a.x, y: a.y };
+      if (a.tx !== undefined && a.ty !== undefined) {
+        m.tx = a.tx;
+        m.ty = a.ty;
+      }
+      out.push(m);
+    }
+  }
+  return out;
+}
+
+/**
+ * Filas de la tabla de etiquetas, en orden de foto y de letra. Si una letra se
+ * repite en dos fotos de la misma página, se aclara de qué foto es.
+ */
+export function labelTableRows(items: { label: PhotoLabel; photo: number }[], layout: 'mechanism' | 'wiring' = 'wiring'): string[][] {
+  const photosOf = new Map<string, Set<number>>();
+  for (const { label, photo } of items) photosOf.set(label.letter, (photosOf.get(label.letter) ?? new Set()).add(photo));
+  const sorted = [...items].sort((a, b) => a.photo - b.photo || a.label.letter.length - b.label.letter.length || (a.label.letter < b.label.letter ? -1 : a.label.letter > b.label.letter ? 1 : 0));
+  return sorted.map(({ label, photo }) => {
+    const letter = (photosOf.get(label.letter)?.size ?? 0) > 1 ? `${label.letter} (foto ${photo})` : label.letter;
+    const what = label.what?.trim() ?? '';
+    const does = label.does?.trim() ?? '';
+    const why = label.why?.trim() ?? '';
+    return layout === 'mechanism' ? [what ? `${letter}: ${what}` : letter, does, why] : [letter, what, does, why];
+  });
 }
 
 function columnsOf(spec: PageTypeSpec, field: string): number {

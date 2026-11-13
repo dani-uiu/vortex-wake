@@ -12,6 +12,7 @@ import {
   SECTIONS,
   toAreaContent,
   type AreaValue,
+  type ImageMark,
   type NotebookDocument,
   type NotebookPage,
   type PageType,
@@ -28,7 +29,12 @@ export interface ResolvedImage {
   src: string;
   caption?: string;
   bytes: Uint8Array;
+  /** Tamaño ya recortado (si hay `crop`). */
   info: ImageInfo;
+  /** Flechas y etiquetas que se dibujan encima. */
+  marks?: ImageMark[];
+  /** Recorte (en pixeles de la imagen completa); PowerPoint lo aplica con `srcRect`. */
+  crop?: { x: number; y: number; width: number; height: number; fullWidth: number; fullHeight: number };
 }
 
 export interface AreaData {
@@ -152,7 +158,11 @@ function contentFromPage(p: NotebookPage, section: TemplateSection, group: Numbe
         kind: 'area',
         text: a.text ?? '',
         code: a.code ?? false,
-        images: (a.images ?? []).map((img) => ({ ...images(img.src), ...(img.caption ? { caption: img.caption } : {}) })),
+        images: (a.images ?? []).map((img) => ({
+          ...images(img.src),
+          ...(img.caption ? { caption: img.caption } : {}),
+          ...(img.marks && img.marks.length > 0 ? { marks: img.marks } : {}),
+        })),
       };
     } else {
       fields[key] = { kind: 'table', rows: (value as string[][] | undefined) ?? [], fixed: fs.kind === 'fixedTable' };

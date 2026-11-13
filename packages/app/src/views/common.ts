@@ -2,6 +2,7 @@ import { ENTRY_KIND_LABELS, MARK_LABELS, SECTION_LABELS, isUnclassified, type En
 import type { App } from '../app.ts';
 import { targetLabel } from '../classify.ts';
 import { h, icon, timeOf } from '../ui.ts';
+import { annotationsToMarks, markedImage } from './marks.ts';
 
 /** Indicador de sincronización: "guardado en este teléfono" / "enviado". */
 /**
@@ -68,9 +69,7 @@ export function entryCard(app: App, e: Entry, onOpen: (id: string) => void, vari
   const thumb = h('div', { class: 'thumb' });
   const first = photos[0];
   if (first && first.type === 'photo') {
-    const img = h('img', { alt: '', decoding: 'async' });
-    void app.photoUrl(first.photoId).then((u) => (img.src = u));
-    thumb.append(img);
+    thumb.append(markedImage(app.photoUrl(first.photoId), annotationsToMarks(first.annotations), { fit: 'cover' }));
     if (photos.length > 1) thumb.append(h('span', { class: 'count', text: `+${photos.length - 1}` }));
   } else {
     const kindIcon = e.elements.some((x) => x.type === 'trials') ? 'trials' : e.elements.some((x) => x.type === 'link') ? 'link' : 'text';
