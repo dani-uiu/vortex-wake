@@ -57,7 +57,12 @@ export function entrySummary(e: Entry): string {
     else if (el.type === 'list') parts.push(el.items.filter((i) => i.trim()).join(', '));
     else if (el.type === 'trials' && el.trials.length > 0) parts.push(`Prueba: ${el.trials.filter((t) => t.ok).length} de ${el.trials.length}`);
     else if (el.type === 'table') parts.push(`Tabla (${el.rows.length} filas)`);
-    else if (el.type === 'photo' && el.caption?.trim()) parts.push(el.caption.trim());
+    else if (el.type === 'photo') {
+      if (el.caption?.trim()) parts.push(el.caption.trim());
+      // Fotos anotadas: las letras con lo que son, para reconocerlas en la lista.
+      const labels = (el.annotations ?? []).flatMap((a) => (a.type === 'label' ? [`${a.letter}${a.what?.trim() ? ` ${a.what.trim()}` : ''}`] : []));
+      if (labels.length > 0) parts.push(labels.join(', '));
+    }
     else if (el.type === 'route') parts.push(`Ruta del autónomo: ${el.points.length} paso(s)`);
     else if (el.type === 'match') parts.push(['Partido', ...matchRow(el).slice(0, 3)].filter((s) => s).join(' · '));
   }
